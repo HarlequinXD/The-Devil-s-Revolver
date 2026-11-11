@@ -9,13 +9,17 @@
 /* 0: moving sprites (player, horse, outlaws, tumbleweeds, dust, shadows)
    stay one size at any distance - the size they have at the chase-camera
    distance - instead of shrinking and growing. Scenery keeps perspective. */
-#define SPRITE_SCALING 0
+#define SPRITE_SCALING 1
 #if SPRITE_SCALING
 #define ACTOR_SCALE(s) (s)
 #else
 #define ACTOR_SIZE_PCT 70  /* size of moving sprites vs their old chase-distance size */
 #define ACTOR_SCALE(s) ((((((1 << 20) / CAM_DIST) * FOCAL) >> 12) * ACTOR_SIZE_PCT) / 100)
 #endif
+/* trees, cacti, Joshua trees and bushes: size vs the original art scale,
+   and the most they may be blown up when right next to the camera (Q8) */
+#define FLORA_SIZE_PCT  60
+#define FLORA_MAX_SCALE 320
 #define FREE_ROAM 1
 
 /* ---- projection (must match tools/common.py) ---- */

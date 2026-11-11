@@ -25,6 +25,7 @@ void world_init(void) {
     for (int i = 0; i < N_BILL_DEFS; i++) {
         bill_tile[i] = t;
         bill_kinv[i] = (16 << 12) / bill_defs[i].k16;
+        if (i <= BILL_BUSH) bill_kinv[i] = bill_kinv[i] * FLORA_SIZE_PCT / 100;   /* flora */
         dma_copy32((u8 *)OBJ_VRAM + t * 32, bill_defs[i].tiles, bill_defs[i].bytes);
         t += bill_defs[i].bytes / 32;
     }
@@ -86,6 +87,7 @@ IWRAM_CODE void draw_billboards(void) {
         if (bill_defs[b->type].k16 >= 32 && p.Z > (380 << 8)) continue;  /* small props fade out early */
         const BillDef *d = &bill_defs[b->type];
         s32 s = (p.scale * bill_kinv[b->type]) >> 12;
+        if (b->type <= BILL_BUSH && s > FLORA_MAX_SCALE) s = FLORA_MAX_SCALE;
         put_scaled(&p, s, d->w, d->h, d->shape, d->size, bill_tile[b->type], d->pal, 2, 0, 0, 0);
         }
     }
