@@ -1,0 +1,40 @@
+name: Build ROM
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+
+      - name: Build
+        run: make
+
+      - name: Fix header for real hardware (devkitPro gbafix)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w devkitpro/devkitarm \
+            /opt/devkitpro/tools/bin/gbafix devils_revolver.gba -tDEVILREVOLVR -cADRE -mHX
+
+      - name: Upload ROM
+        uses: actions/upload-artifact@v4
+        with:
+          name: devils_revolver
+          path: devils_revolver.gba
+
+      - name: Release on tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: devils_revolver.gba
