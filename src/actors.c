@@ -103,13 +103,19 @@ void camera_follow(int snap) {
     if (snap) cam.yaw = player.heading;
     else if (cam_manual) cam.yaw += cam_manual;
     else if (player.moving) {
+        /* only swing round when heading away from / across the view; walking
+           toward the camera it just backs up, so you go straight, not round */
+        s16 ad = diff < 0 ? -diff : diff;
+        if (ad > 18000) goto placed;
         s32 step = diff / (player.running ? 22 : 30);
         if (step > 520) step = 520;
         if (step < -520) step = -520;
+        if (ad > 12000) step = step * (18000 - ad) / 6000;   /* fade out toward 100 deg */
         cam.yaw += step;
     } else {
         cam.yaw += diff / 70;                      /* drift back behind the player */
     }
+placed:;
     s32 want = (horse.ridden ? 58 : CAM_DIST) << 8;
     cam_dist += (want - cam_dist) / 12;
     cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
@@ -167,8 +173,16 @@ static void update_player(u16 keys, u16 pressed) {
     int riding = horse.ridden;
     s32 speed = 0;
     player.running = 0;
+    /* the D-pad is read relative to the camera angle at the moment the
+       direction was pressed, so holding it keeps you on a straight line even
+       while the camera swings round */
+    static int last_dir = -1;
+    static u16 move_ref;
+    int dir = (ix || iy) ? (ix + 1) * 3 + (iy + 1) : -1;
+    if (dir != last_dir || cam_manual) move_ref = cam.yaw;
+    last_dir = dir;
     if (ix || iy) {
-        u16 target = cam.yaw + (u16)iatan2(ix, iy);
+        u16 target = move_ref + (u16)iatan2(ix, iy);
         s16 d = (s16)(target - player.heading);
         s32 turn = riding ? ((keys & KEY_A) ? 1300 : 1700) : 2800;
         if (d > turn) d = turn;
