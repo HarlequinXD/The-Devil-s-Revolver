@@ -156,6 +156,20 @@ def skeleton(phase=None, pose='walk'):
     aR = aL = 0.0
     bR = bL = 0.15
     armR = armL = 0.0
+    bendR = bendL = 0.35          # elbow bend
+    lean = 0.0                    # forward lean of the upper body
+    breath = 0.0
+    lift = 0.0
+    if pose == 'run':
+        s, c = math.sin(2 * math.pi * phase), math.cos(2 * math.pi * phase)
+        aR, aL = 0.85 * s, -0.85 * s
+        bR, bL = 0.3 + 1.45 * max(0, c), 0.3 + 1.45 * max(0, -c)
+        armR, armL = -0.95 * s, 0.95 * s
+        bendR = bendL = 1.35
+        lean = 0.16
+        lift = 1.6 * abs(math.cos(2 * math.pi * phase))     # airborne between strides
+    elif pose == 'breathe':
+        breath = phase
     if pose == 'walk':
         s, c = math.sin(2 * math.pi * phase), math.cos(2 * math.pi * phase)
         aR, aL = 0.5 * s, -0.5 * s
@@ -171,20 +185,21 @@ def skeleton(phase=None, pose='walk'):
         ank = knee + 11.5 * sh_
         J['hip' + side], J['knee' + side], J['ank' + side] = hip, knee, ank
     low = min(J['ankR'][1], J['ankL'][1])
-    dy = 3.0 - low
+    dy = 3.0 - low + lift
     for k in J:
         J[k] = J[k] + np.array([0, dy, 0])
     for side in 'RL':
         J['toe' + side] = J['ank' + side] + np.array([0, -1.4, 4.2])
     up = np.array([0, dy, 0])
-    J['chest'] = np.array([0, 36.5, 0]) + up
-    J['neck'] = np.array([0, 45.0, 0.4]) + up
-    J['head'] = np.array([0, 49.6, 0.6]) + up
-    for side, a in (('R', armR), ('L', armL)):
+    lz = lambda y: np.array([0, breath * (y - 30) / 20, lean * (y - 27)])   # lean / breathing
+    J['chest'] = np.array([0, 36.5, 0]) + up + lz(36.5)
+    J['neck'] = np.array([0, 45.0, 0.4]) + up + lz(45)
+    J['head'] = np.array([0, 49.6, 0.6]) + up + lz(49.6)
+    for side, a, bend in (('R', armR, bendR), ('L', armL, bendL)):
         sx = -6.7 if side == 'R' else 6.7
-        sh = np.array([sx, 41.5, 0]) + up
+        sh = np.array([sx, 41.5, 0]) + up + lz(41.5)
         el = sh + 8.0 * np.array([sx * 0.02, -math.cos(a), math.sin(a)])
-        wr = el + 7.5 * np.array([sx * 0.015, -math.cos(a + 0.35), math.sin(a + 0.35)])
+        wr = el + 7.5 * np.array([sx * 0.015, -math.cos(a + bend), math.sin(a + bend)])
         J['sh' + side], J['el' + side], J['wr' + side] = sh, el, wr
     if pose == 'shoot':
         sh = J['shR']
@@ -275,13 +290,16 @@ OUTLAW_RAMPS = {'skin': [2, 3, 4], 'stubble': [2, 3], 'eye': [1], 'hair': [5, 6]
                 'band': [12, 11], 'coat': [8, 9, 10], 'pants': [1, 13, 13], 'boot': [1, 15, 15], 'belt': [15, 8],
                 'metal': [13, 14, 14], 'bandana': [12, 11, 11], 'shirt': [8, 9, 10]}
 
-N_FRAMES = 8   # idle, walk x6, shoot
+N_FRAMES = 8          # outlaw: idle, walk x6, shoot
+N_FRAMES_COWBOY = 16  # + run x6 (8..13), breathing idle x2 (14, 15)
 
 
 def character_frames(outlaw, W):
     ramps = OUTLAW_RAMPS if outlaw else COWBOY_RAMPS
     frames = []
     poses = [('idle', None)] + [('walk', i / 6) for i in range(6)] + [('shoot', None)]
+    if not outlaw:
+        poses += [('run', i / 6) for i in range(6)] + [('breathe', 0.6), ('breathe', -0.3)]
     for d in range(8):
         yaw = d * math.pi / 4
         for pose, ph in poses:

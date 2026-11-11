@@ -87,10 +87,22 @@ void actors_init(void) {
     camera_follow(1);
 }
 
+/* Driver 3 style chase camera: it swings round behind the player while they
+   move, eases back when they stop, and L / R rotate it by hand. */
+static s16 cam_manual;
+
 void camera_follow(int snap) {
     s16 diff = (s16)(player.heading - cam.yaw);
     if (snap) cam.yaw = player.heading;
-    else cam.yaw += diff / 7 + (diff > 0 ? 1 : diff < 0 ? -1 : 0);
+    else if (cam_manual) cam.yaw += cam_manual;
+    else if (player.moving) {
+        s32 step = diff / (player.running ? 22 : 30);
+        if (step > 520) step = 520;
+        if (step < -520) step = -520;
+        cam.yaw += step;
+    } else {
+        cam.yaw += diff / 70;                      /* drift back behind the player */
+    }
     cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
     cam.x = player.x - ((cam.sn * CAM_DIST) << 8 >> 12);
     cam.y = player.y + ((cam.cs * CAM_DIST) << 8 >> 12);
@@ -138,22 +150,33 @@ static void update_player(u16 keys, u16 pressed) {
         if (player.hurt > 0) player.hurt--;
         return;
     }
-    int turn = player.running ? 520 : 640;
-    if (keys & KEY_LEFT) player.heading -= turn;
-    if (keys & KEY_RIGHT) player.heading += turn;
-    s32 fx_ = isin(player.heading), fy_ = -icos(player.heading);
-    s32 speed = 0, strafe = 0;
+    /* camera-relative movement: the D-pad picks a direction on screen, the
+       player turns to face it and walks that way */
+    int ix = ((keys & KEY_RIGHT) != 0) - ((keys & KEY_LEFT) != 0);
+    int iy = ((keys & KEY_UP) != 0) - ((keys & KEY_DOWN) != 0);
+    cam_manual = ((keys & KEY_R) ? 600 : 0) - ((keys & KEY_L) ? 600 : 0);
+    s32 speed = 0;
     player.running = 0;
-    if (keys & KEY_UP) { speed = (keys & KEY_A) ? 330 : 150; player.running = (keys & KEY_A) != 0; }
-    else if (keys & KEY_DOWN) speed = -100;
-    if (keys & KEY_L) strafe = -110;
-    if (keys & KEY_R) strafe = 110;
+    if (ix || iy) {
+        u16 target = cam.yaw + (u16)iatan2(ix, iy);
+        s16 d = (s16)(target - player.heading);
+        s32 turn = 2800;
+        if (d > turn) d = turn;
+        if (d < -turn) d = -turn;
+        player.heading += d;
+        s16 left = (s16)(target - player.heading);
+        if (left < 0) left = -left;
+        player.running = (keys & KEY_A) != 0;
+        speed = player.running ? 330 : 150;
+        if (left > 12000) speed /= 3;                  /* slow while turning sharply */
+    }
     if (player.shoot_timer) speed = speed / 3;
-    player.moving = speed || strafe;
+    s32 fx_ = isin(player.heading), fy_ = -icos(player.heading);
+    player.moving = speed != 0;
     if (player.moving) {
-        s32 mx = (fx_ * speed + (-fy_) * strafe) >> 12, my = (fy_ * speed + fx_ * strafe) >> 12;
+        s32 mx = (fx_ * speed) >> 12, my = (fy_ * speed) >> 12;
         move_player(mx, my);
-        player.anim += player.running ? 7 : (speed < 0 ? 3 : 4);
+        player.anim += player.running ? 7 : 4;
         if (player.running && (game_frame % 9) == 0)
             fx_spawn(player.x - fx_ * 3 / 16, player.y - fy_ * 3 / 16, FXT_DUST, 0);
     } else player.anim = 0;
@@ -231,11 +254,14 @@ void actors_draw(void) {
     /* player: crisp 1:1 sprite at the chase distance */
     if (!title_mode && project(player.x, player.y, &p) && !(player.hurt && (game_frame & 4))) {
         int d = view_dir(player.heading);
-        int f = 0;
+        static const u8 idle_cycle[4] = {0, 14, 15, 14};
+        int f;
         if (player.health <= 0) f = 0;
         else if (player.shoot_timer) f = 7;
-        else if (player.moving) f = 1 + ((player.anim >> 5) % 6);
-        player_frame_src = spr_cowboy + (d * CHAR_FRAMES + f) * FRAME_BYTES_COWBOY;
+        else if (player.moving && player.running) f = 8 + ((player.anim >> 5) % 6);   /* run cycle */
+        else if (player.moving) f = 1 + ((player.anim >> 5) % 6);                   /* walk cycle */
+        else f = idle_cycle[(game_frame >> 5) & 3];                                 /* breathing */
+        player_frame_src = spr_cowboy + (d * COWBOY_FRAMES + f) * FRAME_BYTES_COWBOY;
         s32 x = p.sx - 32, y = p.sy - 62;
         spr_add(p.Z, (y & 255) | (0 << 14), (x & 511) | (3 << 14), TILE_PLAYER | (1 << 10) | (PAL_COWBOY << 12));
         draw_shadow(&p, p.scale >> 2, p.Z + (3 << 8));

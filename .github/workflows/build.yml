@@ -1,4 +1,4 @@
-name: Build ROM
+name: Build
 
 on:
   push:
@@ -9,32 +9,41 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Build APK
+        run: gradle -p android assembleRelease --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: devils_revolver_android
+          path: android/app/build/outputs/apk/release/*.apk
 
+  gba:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
       - name: Install toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm
-
-      - name: Build
+      - name: Build ROM
         run: make
-
       - name: Fix header for real hardware (devkitPro gbafix)
         run: |
           docker run --rm -v "$PWD:/w" -w /w devkitpro/devkitarm \
             /opt/devkitpro/tools/bin/gbafix devils_revolver.gba -tDEVILREVOLVR -cADRE -mHX
-
       - name: Upload ROM
         uses: actions/upload-artifact@v4
         with:
-          name: devils_revolver
+          name: devils_revolver_gba
           path: devils_revolver.gba
-
-      - name: Release on tags
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: devils_revolver.gba

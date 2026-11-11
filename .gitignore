@@ -4,3 +4,8 @@ build/
 *.sav
 __pycache__/
 *.ppm
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties

@@ -8,6 +8,13 @@ typedef uint16_t u16; typedef int16_t s16;
 typedef uint32_t u32; typedef int32_t s32;
 typedef volatile u16 vu16; typedef volatile u32 vu32;
 
+#ifdef PLATFORM_NATIVE
+/* native build (Android / desktop): plain memory, no special sections */
+#define IWRAM_CODE
+#define IWRAM_DATA
+#define EWRAM_BSS
+#else
+#define PLATFORM_GBA 1
 #ifdef __clang__
 #define IWRAM_CODE __attribute__((section(".iwram"), noinline))
 #else
@@ -15,11 +22,22 @@ typedef volatile u16 vu16; typedef volatile u32 vu32;
 #endif
 #define IWRAM_DATA __attribute__((section(".iwram.data")))
 #define EWRAM_BSS  __attribute__((section(".ewram.bss")))
+#endif
 #define ALIGN4     __attribute__((aligned(4)))
 #define INLINE     static inline __attribute__((always_inline))
 
+#ifdef PLATFORM_NATIVE
+/* the "hardware" lives in ordinary arrays; ppu.c composites them into pixels */
+extern u8 plat_io[0x400];
+extern u16 plat_vram[0xC000];
+extern u16 plat_pal[512];
+extern u16 plat_oam[512];
+#define REG(a)      (*(vu16 *)(plat_io + ((a) - 0x04000000)))
+#define REG32(a)    (*(vu32 *)(plat_io + ((a) - 0x04000000)))
+#else
 #define REG(a)      (*(vu16 *)(a))
 #define REG32(a)    (*(vu32 *)(a))
+#endif
 
 #define REG_DISPCNT   REG(0x04000000)
 #define REG_DISPSTAT  REG(0x04000004)
@@ -75,6 +93,15 @@ typedef volatile u16 vu16; typedef volatile u32 vu32;
 #define DMA_HBLANK     (2u << 28)
 #define DMA_ENABLE     (1u << 31)
 
+#ifdef PLATFORM_NATIVE
+#define VRAM        (plat_vram)
+#define CHARBLOCK(n) (plat_vram + (n) * 0x2000)
+#define SCREENBLOCK(n) (plat_vram + (n) * 0x400)
+#define OBJ_VRAM    (plat_vram + 0x8000)
+#define PAL_BG      (plat_pal)
+#define PAL_OBJ     (plat_pal + 256)
+#define OAM_MEM     (plat_oam)
+#else
 #define VRAM        ((u16 *)0x06000000)
 #define CHARBLOCK(n) ((u16 *)(0x06000000 + (n) * 0x4000))
 #define SCREENBLOCK(n) ((u16 *)(0x06000000 + (n) * 0x800))
@@ -82,12 +109,22 @@ typedef volatile u16 vu16; typedef volatile u32 vu32;
 #define PAL_BG      ((u16 *)0x05000000)
 #define PAL_OBJ     ((u16 *)0x05000200)
 #define OAM_MEM     ((u16 *)0x07000000)
+#endif
 
 enum { KEY_A = 1, KEY_B = 2, KEY_SELECT = 4, KEY_START = 8, KEY_RIGHT = 16, KEY_LEFT = 32,
        KEY_UP = 64, KEY_DOWN = 128, KEY_R = 256, KEY_L = 512 };
 
 typedef struct { u16 attr0, attr1, attr2, fill; } ObjAttr;
 
+#ifdef PLATFORM_NATIVE
+#include <string.h>
+INLINE void dma_copy32(void *dst, const void *src, u32 bytes) { memcpy(dst, src, bytes); }
+INLINE void dma_fill32(void *dst, u32 value, u32 bytes) {
+    u32 *d = (u32 *)dst;
+    for (u32 i = 0; i < bytes / 4; i++) d[i] = value;
+}
+INLINE void vblank_wait(void) {}
+#else
 /* fast 32-bit copy/fill using DMA3 (sizes in bytes, multiple of 4) */
 INLINE void dma_copy32(void *dst, const void *src, u32 bytes) {
     REG_DMA3CNT = 0;
@@ -107,6 +144,7 @@ INLINE void dma_fill32(void *dst, u32 value, u32 bytes) {
 INLINE void vblank_wait(void) {
     __asm__ volatile("swi 0x05" ::: "r0", "r1", "r2", "r3", "memory");
 }
+#endif
 
 extern volatile u32 irq_vblank_count;
 

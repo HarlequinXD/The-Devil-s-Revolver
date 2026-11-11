@@ -1,4 +1,4 @@
-/* The Devil's Revolver - GBA
+/* The Devil's Revolver - game loop and display (GBA, and native Android via ppu.c)
  *
  * Display: Mode 1
  *   BG0  regular 4bpp  sky panorama (scrolls with camera yaw)
@@ -29,7 +29,9 @@ extern int hud_dirty;
 
 static void video_init(void) {
     REG_DISPCNT = 0x80;                                     /* forced blank while loading */
+#ifdef PLATFORM_GBA
     REG_WAITCNT = 0x4317;                                   /* faster ROM access + prefetch */
+#endif
     dma_copy32(PAL_BG, bg_palette, 512);
     dma_copy32(PAL_OBJ, obj_palette, 512);
     dma_copy32(CHARBLOCK(0), ground_tiles, sizeof(ground_tiles));
@@ -69,6 +71,7 @@ static void video_init(void) {
         oam_shadow[m * 4 + 0].fill = pa; oam_shadow[m * 4 + 1].fill = 0;
         oam_shadow[m * 4 + 2].fill = 0;  oam_shadow[m * 4 + 3].fill = pa;
     }
+#ifdef PLATFORM_GBA
     /* cycle counter for the CPU meter */
     REG_TM0CNT = 0; REG_TM1CNT = 0; REG_TM0D = 0; REG_TM1D = 0;
     REG_TM1CNT = 0x84; REG_TM0CNT = 0x80;
@@ -76,6 +79,7 @@ static void video_init(void) {
     REG_DISPSTAT = 1 << 3;
     REG_IE = 1;
     REG_IME = 1;
+#endif
 }
 
 INLINE u32 cycles(void) {
@@ -110,9 +114,10 @@ static void build_oam(void) {
     for (int i = n; i < 128; i++) oam_shadow[i].attr0 = 0x200;
 }
 
-static void present(void) {
+void game_present(void) {
     M7Line *t = m7tab[m7_back];
     m7_front = t;
+#ifdef PLATFORM_GBA
     REG_DMA0CNT = 0;
     REG_DMA2CNT = 0;
     REG_BG2PA = t[0].pa; REG_BG2PB = 0; REG_BG2PC = t[0].pc; REG_BG2PD = 0;
@@ -124,6 +129,7 @@ static void present(void) {
     REG_DMA2SAD = (u32)&haze[1];
     REG_DMA2DAD = 0x04000054;
     REG_DMA2CNT = 1 | DMA_DST_FIXED | DMA_REPEAT | DMA_HBLANK | DMA_ENABLE;
+#endif
     m7_back ^= 1;
 
     dma_copy32(OAM_MEM, oam_shadow, sizeof(oam_shadow));
@@ -151,61 +157,76 @@ static void render_frame(void) {
     t2 = cycles(); perf_parts[4] = t2 - t; t = t2;
 }
 
-int main(void) {
+/* ------------------------------------------------------------- game state machine */
+static int title;
+static u16 prev_keys;
+static u32 orbit;
+
+void game_init(void) {
     video_init();
     world_init();
     actors_init();
     hud_init();
-    int title = 1;
+    title = 1;
     title_mode = 1;
-    u16 prev_keys = 0;
+    prev_keys = 0;
+    orbit = 0;
+    render_frame();
+    game_present();
+    REG_DISPCNT = 1 | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 12) | (1 << 13);
+}
+
+/* advance the game by `steps` 60 Hz ticks and render one frame */
+void game_tick(u16 keys, int steps) {
+    u32 t0 = cycles();
+    u16 pressed = keys & ~prev_keys;
+    prev_keys = keys;
+    if (steps < 1) steps = 1;
+    if (steps > 3) steps = 3;
+    if (title) {
+        /* attract mode: a slow dolly up the main street */
+        orbit += steps;
+        s32 along = (orbit * 40) % (560 << 8);
+        cam.yaw = (u16)(isin(orbit * 90) >> 2);
+        cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
+        cam.x = (512 << 8) + (isin(orbit * 60) << 2);
+        cam.y = (820 << 8) - along;
+        for (int s = 0; s < steps; s++) { game_frame++; actors_update(0, 0); }
+        if (pressed & KEY_START) { title = 0; title_mode = 0; actors_init(); bld_invalidate(); }
+    } else {
+        u32 tl = cycles();
+        for (int s = 0; s < steps; s++) {
+            game_frame++;
+            actors_update(keys, s == 0 ? pressed : 0);
+            camera_follow(0);
+        }
+        perf_parts[5] = (cycles() - tl) / steps;
+        if (pressed & KEY_START) {
+            if (player.health <= 0) { actors_init(); bld_invalidate(); }
+            else show_perf ^= 1;
+        }
+    }
+    render_frame();
+    render_count++;
+    hud_update(title);
+    perf_cycles = cycles() - t0;
+}
+
+#ifdef PLATFORM_GBA
+int main(void) {
+    game_init();
     u32 last_vb = irq_vblank_count;
     u32 last_present = irq_vblank_count;
-    u32 orbit = 0;
-    render_frame();
-    vblank_wait();
-    present();
-    REG_DISPCNT = 1 | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 12) | (1 << 13);
     while (1) {
-        u32 t0 = cycles();
         u16 keys = ~REG_KEYINPUT & 0x3FF;
-        u16 pressed = keys & ~prev_keys;
-        prev_keys = keys;
         u32 vb = irq_vblank_count;
         int steps = (int)(vb - last_vb);
         last_vb = vb;
-        if (steps < 1) steps = 1;
-        if (steps > 3) steps = 3;
-        if (title) {
-            /* attract mode: a slow dolly up the main street */
-            orbit += steps;
-            s32 along = (orbit * 40) % (560 << 8);
-            cam.yaw = (u16)(isin(orbit * 90) >> 2);
-            cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
-            cam.x = (512 << 8) + (isin(orbit * 60) << 2);
-            cam.y = (820 << 8) - along;
-            for (int s = 0; s < steps; s++) { game_frame++; actors_update(0, 0); }
-            if (pressed & KEY_START) { title = 0; title_mode = 0; actors_init(); bld_invalidate(); }
-        } else {
-            u32 tl = cycles();
-            for (int s = 0; s < steps; s++) {
-                game_frame++;
-                actors_update(keys, s == 0 ? pressed : 0);
-                camera_follow(0);
-            }
-            perf_parts[5] = (cycles() - tl) / steps;
-            if (pressed & KEY_START) {
-                if (player.health <= 0) { actors_init(); bld_invalidate(); }
-                else show_perf ^= 1;
-            }
-        }
-        render_frame();
-        render_count++;
-        hud_update(title);
-        perf_cycles = cycles() - t0;
+        game_tick(keys, steps);
         /* locked 30 fps: buildings are fully re-rendered in 3D every frame */
         do { vblank_wait(); } while ((irq_vblank_count - last_present) < 2);
         last_present = irq_vblank_count;
-        present();
+        game_present();
     }
 }
+#endif

@@ -222,7 +222,7 @@ def main():
         'N_GROUND_TILES': ntiles, 'N_SKY_TILES': len(sky_tiles), 'N_FONT_TILES': len(font_tiles),
         'N_TOWN_TEX': len(town.TEXTURES), 'N_MESHES': len(town.MESHES), 'N_BUILDINGS': len(town.BUILDINGS),
         'N_BILL_DEFS': len(bills), 'N_WORLD_BILLS': len(places), 'N_NPC_SPAWNS': len(spawns),
-        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES,
+        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES, 'COWBOY_FRAMES': spr.N_FRAMES_COWBOY,
         'GEN_HORIZON': HORIZON, 'GEN_FOCAL': FOCAL, 'GEN_CAM_H': CAM_H,
     }
     with open(os.path.join(OUT, 'assets.h'), 'w') as f:

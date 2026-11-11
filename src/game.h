@@ -124,6 +124,9 @@ extern Npc npcs[MAX_NPC];
 extern u32 game_frame;
 
 void hud_init(void);
+void game_init(void);
+void game_tick(u16 keys, int steps);
+void game_present(void);
 void bld_invalidate(void);
 extern int title_mode;
 void hud_text(int x, int y, const char *s, int gold);

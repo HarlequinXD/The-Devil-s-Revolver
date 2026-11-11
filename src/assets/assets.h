@@ -31,6 +31,7 @@ typedef struct { s16 x, y; u8 type, pad; } BillPlace;
 #define N_NPC_SPAWNS 8
 #define N_SCALE_LEVELS 31
 #define CHAR_FRAMES 8
+#define COWBOY_FRAMES 16
 #define GEN_HORIZON 52
 #define GEN_FOCAL 160
 #define GEN_CAM_H 24
@@ -83,7 +84,7 @@ extern const TexDef town_tex[20];
 extern const u8 town_shade[48];
 extern const Mesh town_mesh[11];
 extern const BuildingDef town_buildings[17];
-extern const u8 spr_cowboy[131072];
+extern const u8 spr_cowboy[262144];
 extern const u8 spr_outlaw[65536];
 extern const s8 gun_tips[32];
 extern const u8 spr_outlaw_dead[1024];

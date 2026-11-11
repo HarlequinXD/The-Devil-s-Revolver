@@ -51,7 +51,7 @@ void hud_update(int title) {
         else hud_clear_row(12);
         if (FREE_ROAM) {
             hud_text(5, 17, "D-PAD MOVE    A RUN", 0);
-            hud_text(5, 18, "L/R STRAFE    FREE ROAM", 0);
+            hud_text(5, 18, "L/R CAMERA    FREE ROAM", 0);
         } else {
             hud_text(1, 17, "D-PAD MOVE   A RUN   B SHOOT", 0);
             hud_text(1, 18, "L/R STRAFE   SELECT RELOAD", 0);

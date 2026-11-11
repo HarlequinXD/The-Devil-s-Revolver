@@ -22,10 +22,34 @@ static int shade_ready;
 
 typedef long long s64;
 
+#ifdef PLATFORM_NATIVE
+#define IWRAM_FN
+#else
+#define IWRAM_FN __attribute__((section(".iwram")))
+#endif
+
 /* ARM assembly inner loop (fill.s): textured, transparent, shaded column */
+#ifdef PLATFORM_GBA
 void col_fill(u8 *dst, const u8 *col, u32 vv, u32 vstp, u32 n, const u8 *shade, u32 sh, u32 mask);
 void pack_row(u32 *out, const u8 *src, u32 ntiles);  /* ntiles 8x8 tiles -> 4bpp */
 void canvas_clear_row(u8 *dst, u32 bytes);          /* bytes multiple of 32 */
+#else
+/* portable C versions of the ARM assembly loops in fill.s */
+static void col_fill(u8 *dst, const u8 *col, u32 vv, u32 vstp, u32 n, const u8 *shade, u32 sh, u32 mask) {
+    if (shade) for (; n; n--, dst += 128, vv += vstp) *dst = shade[col[(vv >> sh) & mask]];
+    else for (; n; n--, dst += 128, vv += vstp) *dst = col[(vv >> sh) & mask];
+}
+static void pack_row(u32 *out, const u8 *src, u32 ntiles) {
+    for (u32 t = 0; t < ntiles; t++, src += 8)
+        for (int r = 0; r < 8; r++) {
+            const u8 *s = src + r * 128;
+            u32 v = 0;
+            for (int k = 0; k < 8; k++) v |= (u32)(s[k] & 15) << (k * 4);
+            *out++ = v;
+        }
+}
+static void canvas_clear_row(u8 *dst, u32 bytes) { memset(dst, 0, bytes); }
+#endif
 
 INLINE s32 mul64sh(s32 a, s32 b, int sh) { return (s32)(((s64)a * b) >> sh); }
 
@@ -67,7 +91,7 @@ static int prep_nw, prep_np, prep_s, prep_nx, prep_ny, prep_ow, prep_oh;
 static s32 prep_bx0, prep_by0;
 
 /* ------------------------------------------------------------- wall columns */
-__attribute__((section(".iwram"))) static void draw_wall(const WallJob *j) {
+IWRAM_FN static void draw_wall(const WallJob *j) {
     const MWall *w = j->w;
     s32 sxa16 = j->sxa16, sxb16 = j->sxb16;
     s32 span = sxb16 - sxa16;
@@ -140,7 +164,7 @@ __attribute__((section(".iwram"))) static void draw_wall(const WallJob *j) {
 /* ------------------------------------------------------------- affine triangles */
 typedef struct { s32 x, u, v, dx, du, dv; s32 y0, y1; } Edge;
 
-__attribute__((section(".iwram"))) static int edge_init(Edge *e, const PolyJob *p, int a, int b) {
+IWRAM_FN static int edge_init(Edge *e, const PolyJob *p, int a, int b) {
     s32 ay = p->y[a], by = p->y[b];
     s32 dy = by - ay;
     if (dy <= 0) return 0;
@@ -185,7 +209,7 @@ static inline __attribute__((always_inline)) void span(s32 row, const Edge *l, c
     }
 }
 
-__attribute__((section(".iwram"))) static void draw_tri(const PolyJob *p, int i0, int i1, int i2) {
+IWRAM_FN static void draw_tri(const PolyJob *p, int i0, int i1, int i2) {
     int idx[3] = {i0, i1, i2};
     /* sort by y */
     if (p->y[idx[0]] > p->y[idx[1]]) { int t = idx[0]; idx[0] = idx[1]; idx[1] = t; }
@@ -240,7 +264,7 @@ __attribute__((section(".iwram"))) static void draw_tri(const PolyJob *p, int i0
 }
 
 /* ------------------------------------------------------------- building */
-__attribute__((section(".iwram"))) static int shade_for(s32 nx, s32 ny) {           /* world normal (any scale) */
+IWRAM_FN static int shade_for(s32 nx, s32 ny) {           /* world normal (any scale) */
     s32 len = (nx < 0 ? -nx : nx) + (ny < 0 ? -ny : ny);
     if (!len) return 1;
     s32 d = nx * SUN_X + ny * SUN_Y;              /* ~ Q12 cos * len */
@@ -495,6 +519,7 @@ IWRAM_CODE void m7_build_iw(void *tp) {
     for (int y = 0; y < HORIZON; y++) t[y] = t[HORIZON];
 }
 
+#ifdef PLATFORM_GBA
 /* ------------------------------------------------------------- vblank IRQ
  * Repeating HBlank DMAs keep incrementing their source address, so they are
  * re-armed every vblank (even when the game loop runs slower than 60 Hz). */
@@ -514,3 +539,4 @@ IWRAM_CODE void vblank_isr(void) {
     REG_DMA2DAD = 0x04000054;
     REG_DMA2CNT = 1 | DMA_DST_FIXED | DMA_REPEAT | DMA_HBLANK | DMA_ENABLE;
 }
+#endif
