@@ -47,3 +47,26 @@ jobs:
         with:
           name: devils_revolver_gba
           path: devils_revolver.gba
+
+  release:
+    # publish the newest builds from main as the "latest-build" release, so the
+    # APK can be downloaded straight to a phone
+    if: github.ref == 'refs/heads/main'
+    needs: [android, gba]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp out/devils_revolver_android/*.apk DevilsRevolver.apk
+          cp out/devils_revolver_gba/devils_revolver.gba DevilsRevolver.gba
+          gh release delete latest-build --cleanup-tag -y || true
+          gh release create latest-build DevilsRevolver.apk DevilsRevolver.gba \
+            --target "$GITHUB_SHA" --latest \
+            --title "Latest build" \
+            --notes "Automatic build of ${GITHUB_SHA::7}. Install DevilsRevolver.apk on Android; DevilsRevolver.gba runs on GBA hardware/emulators."
