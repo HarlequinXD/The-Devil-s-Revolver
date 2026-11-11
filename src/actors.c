@@ -336,6 +336,7 @@ void actors_draw(void) {
     /* player: crisp 1:1 sprite at the chase distance */
     horse_frame_src = 0;
     if (project(horse.x, horse.y, &p)) {
+        p.scale = ACTOR_SCALE(p.scale);
         int d = view_dir(horse.heading);
         int f = horse.gait == 2 ? 7 + ((horse.anim >> 5) % 6) : horse.gait == 1 ? 1 + ((horse.anim >> 5) % 6) : 0;
         if (horse.ridden) f += 13;
@@ -345,6 +346,7 @@ void actors_draw(void) {
         draw_shadow(&p, (p.scale * 5) >> 3, p.Z + (4 << 8));
     }
     if (!title_mode && !horse.ridden && project(player.x, player.y, &p) && !(player.hurt && (game_frame & 4))) {
+        p.scale = ACTOR_SCALE(p.scale);
         int d = view_dir(player.heading);
         static const u8 idle_cycle[4] = {0, 14, 15, 14};
         int f;
@@ -366,6 +368,7 @@ void actors_draw(void) {
         Npc *n = &npcs[i];
         npc_frame_src[i] = 0;
         if (n->state == 0xFF || !project(n->x, n->y, &p)) continue;
+        p.scale = ACTOR_SCALE(p.scale);
         s32 s = p.scale >> 2;                       /* outlaw art: 4 px per unit */
         u16 tile = TILE_NPC + i * 32;
         if (n->state == NS_DEAD) {
@@ -388,7 +391,8 @@ void actors_draw(void) {
     }
     for (int i = 0; i < N_TUMBLE; i++) {
         Tumble *t = &tumbles[i];
-        if (!project(t->x, t->y, &p)) continue;
+        if (!project(t->x, t->y, &p) || (!SPRITE_SCALING && p.Z > (260 << 8))) continue;
+        p.scale = ACTOR_SCALE(p.scale);
         const BillDef *d = &bill_defs[BILL_TUMBLE0];
         s32 s = (p.scale * bill_kinv[BILL_TUMBLE0]) >> 12;
         s32 hop = (isin(t->phase) < 0 ? -isin(t->phase) : isin(t->phase)) * 3 >> 12;

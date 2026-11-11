@@ -168,13 +168,13 @@ void draw_fx(void) {
     for (int i = 0; i < MAX_FX; i++) {
         FxEnt *f = &fx[i];
         if (!f->t || !project(f->x, f->y, &p)) continue;
-        s32 s = p.scale >> 1;                              /* 2 art px per unit */
+        s32 s = ACTOR_SCALE(p.scale) >> 1;                 /* 2 art px per unit */
         if (f->type == FXT_DUST) {
             int fr = 2 - f->t / 9;
             if (fr < 0) fr = 0;
             put_scaled(&p, s, 16, 16, 0, 1, FX_DUST + fr * 4, PAL_FX, 1, 0, 0, -(4 << 8));
         } else {
-            s32 lift = (f->h * p.scale) >> 8;
+            s32 lift = (f->h * ACTOR_SCALE(p.scale)) >> 8;
             put_scaled(&p, s, 16, 16, 0, 1, FX_SPARK, PAL_FX, 8, lift, 0, -(6 << 8));
         }
     }

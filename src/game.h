@@ -6,6 +6,15 @@
 
 /* Free roam: no outlaws, no shooting - just explore the town and desert.
    Set to 0 to bring back the bounty-hunting gameplay. */
+/* 0: moving sprites (player, horse, outlaws, tumbleweeds, dust, shadows)
+   stay one size at any distance - the size they have at the chase-camera
+   distance - instead of shrinking and growing. Scenery keeps perspective. */
+#define SPRITE_SCALING 0
+#if SPRITE_SCALING
+#define ACTOR_SCALE(s) (s)
+#else
+#define ACTOR_SCALE(s) ((((1 << 20) / CAM_DIST) * FOCAL) >> 12)
+#endif
 #define FREE_ROAM 1
 
 /* ---- projection (must match tools/common.py) ---- */
