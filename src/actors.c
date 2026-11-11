@@ -5,6 +5,10 @@
 Camera cam;
 Player player;
 Npc npcs[MAX_NPC];
+Horse horse;
+int horse_hint;
+const u8 *horse_frame_src;
+static s32 cam_dist = CAM_DIST << 8;      /* Q8, pulls back when riding */
 
 const u8 *player_frame_src;
 const u8 *npc_frame_src[MAX_NPC];
@@ -83,6 +87,9 @@ void actors_init(void) {
         tumbles[i].x = (rand32() % 1000) << 8; tumbles[i].y = (100 + rand32() % 820) << 8;
         tumbles[i].vx = 60 + (rand32() & 63); tumbles[i].phase = rand32();
     }
+    horse.x = player.x + (18 << 8); horse.y = player.y - (6 << 8);
+    horse.heading = 0; horse.anim = 0; horse.gait = 0; horse.ridden = 0;
+    cam_dist = CAM_DIST << 8;
     cam.yaw = 0;
     camera_follow(1);
 }
@@ -103,9 +110,11 @@ void camera_follow(int snap) {
     } else {
         cam.yaw += diff / 70;                      /* drift back behind the player */
     }
+    s32 want = (horse.ridden ? 58 : CAM_DIST) << 8;
+    cam_dist += (want - cam_dist) / 12;
     cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
-    cam.x = player.x - ((cam.sn * CAM_DIST) << 8 >> 12);
-    cam.y = player.y + ((cam.cs * CAM_DIST) << 8 >> 12);
+    cam.x = player.x - ((cam.sn * (cam_dist >> 4)) >> 8);
+    cam.y = player.y + ((cam.cs * (cam_dist >> 4)) >> 8);
 }
 
 static void shoot(void) {
@@ -151,23 +160,25 @@ static void update_player(u16 keys, u16 pressed) {
         return;
     }
     /* camera-relative movement: the D-pad picks a direction on screen, the
-       player turns to face it and walks that way */
+       player (or the horse being ridden) turns to face it and goes that way */
     int ix = ((keys & KEY_RIGHT) != 0) - ((keys & KEY_LEFT) != 0);
     int iy = ((keys & KEY_UP) != 0) - ((keys & KEY_DOWN) != 0);
     cam_manual = ((keys & KEY_R) ? 600 : 0) - ((keys & KEY_L) ? 600 : 0);
+    int riding = horse.ridden;
     s32 speed = 0;
     player.running = 0;
     if (ix || iy) {
         u16 target = cam.yaw + (u16)iatan2(ix, iy);
         s16 d = (s16)(target - player.heading);
-        s32 turn = 2800;
+        s32 turn = riding ? ((keys & KEY_A) ? 1300 : 1700) : 2800;
         if (d > turn) d = turn;
         if (d < -turn) d = -turn;
         player.heading += d;
         s16 left = (s16)(target - player.heading);
         if (left < 0) left = -left;
         player.running = (keys & KEY_A) != 0;
-        speed = player.running ? 330 : 150;
+        if (riding) speed = player.running ? 560 : 230;
+        else speed = player.running ? 330 : 150;
         if (left > 12000) speed /= 3;                  /* slow while turning sharply */
     }
     if (player.shoot_timer) speed = speed / 3;
@@ -175,11 +186,38 @@ static void update_player(u16 keys, u16 pressed) {
     player.moving = speed != 0;
     if (player.moving) {
         s32 mx = (fx_ * speed) >> 12, my = (fy_ * speed) >> 12;
-        move_player(mx, my);
+        if (riding) {
+            if (!blocked(horse.x + mx, horse.y, 8)) horse.x += mx;
+            if (!blocked(horse.x, horse.y + my, 8)) horse.y += my;
+            player.x = horse.x; player.y = horse.y;
+        } else move_player(mx, my);
         player.anim += player.running ? 7 : 4;
-        if (player.running && (game_frame % 9) == 0)
-            fx_spawn(player.x - fx_ * 3 / 16, player.y - fy_ * 3 / 16, FXT_DUST, 0);
+        if (player.running && (game_frame % (riding ? 5 : 9)) == 0)
+            fx_spawn(player.x - fx_ * (riding ? 10 : 3) / 16, player.y - fy_ * (riding ? 10 : 3) / 16, FXT_DUST, 0);
     } else player.anim = 0;
+    if (riding) {
+        horse.heading = player.heading;
+        horse.gait = !player.moving ? 0 : player.running ? 2 : 1;
+        horse.anim += horse.gait == 2 ? 10 : 5;
+    }
+    /* B: climb on / get off the horse */
+    s32 hdx = (horse.x - player.x) >> 8, hdy = (horse.y - player.y) >> 8;
+    int near = hdx * hdx + hdy * hdy < 28 * 28;
+    horse_hint = riding ? 2 : near ? 1 : 0;
+    if ((pressed & KEY_B) && FREE_ROAM) {
+        if (riding) {
+            for (int k = 0; k < 4; k++) {          /* step off to the left, right, back, front */
+                static const s16 off[4] = {-16384, 16384, -32768, 0};
+                u16 h = player.heading + off[k];
+                s32 px = horse.x + ((isin(h) * 14) << 8 >> 12), py = horse.y - ((icos(h) * 14) << 8 >> 12);
+                if (!blocked(px, py, 5)) { player.x = px; player.y = py; horse.ridden = 0; horse.gait = 0; break; }
+            }
+        } else if (near) {
+            horse.ridden = 1;
+            player.x = horse.x; player.y = horse.y;
+            player.heading = horse.heading;
+        }
+    }
     if (player.shoot_timer) player.shoot_timer--;
     if (player.reload) {
         if (--player.reload == 0) player.ammo = 6;
@@ -236,8 +274,38 @@ static void update_npc(Npc *n) {
     }
 }
 
+/* the horse trots after the player when not ridden */
+static void update_horse(void) {
+    if (horse.ridden) return;
+    s32 dx = (player.x - horse.x) >> 8, dy = (player.y - horse.y) >> 8;
+    s32 d2 = dx * dx + dy * dy;
+    int want = horse.gait ? (d2 > 24 * 24) : (d2 > 36 * 36);   /* hysteresis */
+    if (!want) { horse.gait = 0; horse.anim = 0; return; }
+    u16 target = heading_of(dx, dy);
+    s16 d = (s16)(target - horse.heading);
+    if (d > 1400) d = 1400;
+    if (d < -1400) d = -1400;
+    horse.heading += d;
+    s32 speed = d2 > 110 * 110 ? 480 : d2 > 60 * 60 ? 260 : 170;
+    horse.gait = speed >= 480 ? 2 : 1;
+    horse.anim += horse.gait == 2 ? 10 : 5;
+    for (int k = 0; k < 3; k++) {              /* go round obstacles */
+        static const s16 steer[3] = {0, 7000, -7000};
+        u16 h = horse.heading + steer[k];
+        s32 mx = (isin(h) * speed) >> 12, my = (-icos(h) * speed) >> 12;
+        if (!blocked(horse.x + mx, horse.y + my, 8)) {
+            horse.x += mx; horse.y += my;
+            if (k) horse.heading += steer[k] / 8;
+            break;
+        }
+    }
+    if (horse.gait == 2 && (game_frame % 6) == 0)
+        fx_spawn(horse.x - isin(horse.heading) * 10 / 16, horse.y + icos(horse.heading) * 10 / 16, FXT_DUST, 0);
+}
+
 void actors_update(u16 keys, u16 pressed) {
     update_player(keys, pressed);
+    update_horse();
     if (!FREE_ROAM) for (int i = 0; i < MAX_NPC; i++) update_npc(&npcs[i]);
     for (int i = 0; i < N_TUMBLE; i++) {
         Tumble *t = &tumbles[i];
@@ -252,7 +320,17 @@ void actors_update(u16 keys, u16 pressed) {
 void actors_draw(void) {
     Proj p;
     /* player: crisp 1:1 sprite at the chase distance */
-    if (!title_mode && project(player.x, player.y, &p) && !(player.hurt && (game_frame & 4))) {
+    horse_frame_src = 0;
+    if (project(horse.x, horse.y, &p)) {
+        int d = view_dir(horse.heading);
+        int f = horse.gait == 2 ? 7 + ((horse.anim >> 5) % 6) : horse.gait == 1 ? 1 + ((horse.anim >> 5) % 6) : 0;
+        if (horse.ridden) f += 13;
+        horse_frame_src = spr_horse + (d * HORSE_FRAMES + f) * 2048;
+        s32 s = (p.scale * 16) / HORSE_K16;
+        put_scaled(&p, s, 64, 64, 0, 3, TILE_HORSE, PAL_HORSE, 2, 0, 0, 0);
+        draw_shadow(&p, (p.scale * 5) >> 3, p.Z + (4 << 8));
+    }
+    if (!title_mode && !horse.ridden && project(player.x, player.y, &p) && !(player.hurt && (game_frame & 4))) {
         int d = view_dir(player.heading);
         static const u8 idle_cycle[4] = {0, 14, 15, 14};
         int f;

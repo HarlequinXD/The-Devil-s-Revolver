@@ -135,6 +135,8 @@ def main():
             v = R @ tip
             tips += [int(round(wide / 2 + v[0])), int(round(62 - v[1]))]
     cf.array('s8', 'gun_tips', tips)
+    horse = spr.horse_frames()
+    cf.array('u8', 'spr_horse', [b for f in horse for b in sprite_to_4bpp(f)], per_line=32)
     cf.array('u8', 'spr_outlaw_dead', sprite_to_4bpp(spr.dead_frame(True)), per_line=32)
     bills = [  # name, image, palette bank, art px per world unit, collision radius
         ('saguaro', spr.saguaro(), 2, 1.25, 4), ('joshua', spr.joshua(), 2, 1.6, 3),
@@ -157,7 +159,7 @@ def main():
     cf.array('u8', 'fx_spark', sprite_to_4bpp(spr.fx_spark()), per_line=32)
     objpal = [0] * 256
     for bank, pal in ((0, spr.COWBOY_PAL), (1, spr.OUTLAW_PAL), (2, spr.PLANT_PAL), (3, spr.PROP_PAL),
-                      (4, spr.FX_PAL), (5, town.TOWN_PAL)):
+                      (4, spr.FX_PAL), (5, town.TOWN_PAL), (6, spr.HORSE_PAL)):
         objpal[bank * 16:bank * 16 + 16] = spr.pal15(pal)
     cf.array('u16', 'obj_palette', objpal)
     decls += cf.write()
@@ -222,7 +224,7 @@ def main():
         'N_GROUND_TILES': ntiles, 'N_SKY_TILES': len(sky_tiles), 'N_FONT_TILES': len(font_tiles),
         'N_TOWN_TEX': len(town.TEXTURES), 'N_MESHES': len(town.MESHES), 'N_BUILDINGS': len(town.BUILDINGS),
         'N_BILL_DEFS': len(bills), 'N_WORLD_BILLS': len(places), 'N_NPC_SPAWNS': len(spawns),
-        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES, 'COWBOY_FRAMES': spr.N_FRAMES_COWBOY,
+        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES, 'COWBOY_FRAMES': spr.N_FRAMES_COWBOY, 'HORSE_FRAMES': spr.HORSE_FRAMES, 'HORSE_K16': int(round(spr.HORSE_K * 16)),
         'GEN_HORIZON': HORIZON, 'GEN_FOCAL': FOCAL, 'GEN_CAM_H': CAM_H,
     }
     with open(os.path.join(OUT, 'assets.h'), 'w') as f:

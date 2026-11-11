@@ -39,8 +39,9 @@ INLINE u32 timer_cycles(void) {
 
 /* ---- OBJ VRAM layout (tile = 32 bytes) ---- */
 #define TILE_PLAYER     0      /* 64x64 (64 tiles) */
-#define TILE_NPC        64     /* 6 x 32x64 (32 tiles each) */
-#define MAX_NPC         6
+#define TILE_NPC        64     /* 4 x 32x64 (32 tiles each) */
+#define MAX_NPC         4
+#define TILE_HORSE      192    /* 64x64 horse (with or without rider) */
 #define TILE_BILLS      256    /* static billboard art */
 #define TILE_FX         528
 #define TILE_BSLOT      576    /* building canvases (tile pool) */
@@ -51,6 +52,7 @@ INLINE u32 timer_cycles(void) {
 #define PAL_OUTLAW 1
 #define PAL_FX     4
 #define PAL_TOWN   5
+#define PAL_HORSE  6
 
 /* ---- camera ---- */
 typedef struct {
@@ -120,6 +122,15 @@ typedef struct {
 } Player;
 
 extern Player player;
+
+typedef struct {
+    s32 x, y;          /* Q8 */
+    u16 heading, anim;
+    u8 gait;           /* 0 idle, 1 walk, 2 gallop */
+    u8 ridden;
+} Horse;
+extern Horse horse;
+extern int horse_hint;  /* 0 none, 1 "mount", 2 riding */
 extern Npc npcs[MAX_NPC];
 extern u32 game_frame;
 

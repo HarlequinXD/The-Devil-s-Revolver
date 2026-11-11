@@ -475,3 +475,114 @@ def fx_spark():
 
 def pal15(pal):
     return [rgb15(hexrgb(c)) for c in pal]
+
+
+# ------------------------------------------------------------------ horse
+# Modelled in the same units as the cowboy (4 per world unit) so the rider fits
+# the saddle; rendered at 0.58 px per unit (2.32 art px per world unit).
+HORSE_PAL = ['#000000', '#1b120d', '#5a3218', '#8a5229', '#b47a42', '#2a1a12', '#4a2c18', '#7a4e2a',
+             '#9c3426', '#bf855b', '#e6c09a', '#4b3324', '#74513a', '#6c4a26', '#93693c', '#4c5d74']
+HORSE_RAMPS = {'coat': [2, 3, 4], 'mane': [1, 5], 'hoof': [1, 5], 'blanket': [8, 8], 'saddle': [6, 7],
+               'blaze': [10], 'skin': [9, 10], 'stubble': [9], 'eye': [1], 'hair': [11], 'hat': [11, 12],
+               'hat2': [11, 12], 'band': [6, 8], 'poncho': [13, 14], 'stripe': [8, 10], 'shirt': [13, 14],
+               'pants': [15], 'boot': [1, 5], 'belt': [6, 7], 'metal': [15, 10], 'scarf': [8], 'coat_r': [2, 3]}
+HORSE_SCALE = 0.58
+HORSE_K = HORSE_SCALE * 4          # art pixels per world unit
+HORSE_FRAMES = 26                  # idle, walk x6, gallop x6, then the same with the rider
+
+
+def horse_prims(gait, phase, ridden):
+    P = []
+    two_pi = 2 * math.pi
+    if gait == 'gallop':
+        amp, bend, offs = 0.75, 1.4, {'LH': 0.0, 'RH': 0.12, 'LF': 0.45, 'RF': 0.57}
+        bob = 3.0 * math.cos(two_pi * phase)
+        pitch = 0.08 * math.sin(two_pi * phase)
+    elif gait == 'walk':
+        amp, bend, offs = 0.32, 0.9, {'LH': 0.0, 'LF': 0.25, 'RH': 0.5, 'RF': 0.75}
+        bob = 0.8 * math.cos(2 * two_pi * phase)
+        pitch = 0.0
+    else:
+        amp, bend, offs, bob, pitch = 0.0, 0.0, {'LH': 0, 'LF': 0, 'RH': 0, 'RF': 0}, 0.0, 0.0
+    R = rot_x(-pitch)
+
+    def B(v):  # body-space point -> horse space (pitch about the barrel centre, bob)
+        v = np.array(v, float) - [0, 44, 0]
+        return R @ v + [0, 44 + bob, 0]
+    # barrel, chest, rump
+    P.append(Ell(B((0, 44, 0)), (13, 15, 30), 'coat', rot=R))
+    P.append(Ell(B((0, 45, 19)), (12, 15, 14), 'coat', rot=R))
+    P.append(Ell(B((0, 47, -20)), (13.5, 15, 15), 'coat', rot=R))
+    # neck + head
+    P.append(Cap(B((0, 52, 22)), B((0, 70, 35)), 8.5, 'coat', 6.0))
+    P.append(Cap(B((0, 74, 38)), B((0, 63, 50)), 6.5, 'coat', 4.6))
+    P.append(Cap(B((0, 72, 41.5)), B((0, 64, 50.5)), 2.3, 'blaze', 1.5))
+    for sx in (-1, 1):
+        P.append(Cap(B((sx * 2.8, 79, 36.5)), B((sx * 3.4, 85, 35.5)), 1.5, 'coat', 0.9))
+        P.append(Ell(B((sx * 4.6, 72, 41)), (0.9, 1.0, 1.0), 'eye'))
+    # mane and tail
+    P.append(Cap(B((0, 60, 17)), B((0, 78, 33)), 3.0, 'mane', 2.2))
+    sway = 3.0 * math.sin(two_pi * phase) if gait != 'idle' else 0.0
+    t0, t1 = B((0, 52, -34)), B((sway, 34, -41 - (6 if gait == 'gallop' else 0)))
+    P.append(Cap(t0, t1, 3.4, 'mane', 1.6))
+    # legs
+    for name in ('LF', 'RF', 'LH', 'RH'):
+        sx = -7.0 if name[0] == 'R' else 7.0
+        front = name[1] == 'F'
+        top = B((sx, 38 if front else 41, 18 if front else -20))
+        ph = phase + offs[name]
+        a = amp * math.sin(two_pi * ph)
+        lift = max(0.0, math.cos(two_pi * ph)) * bend
+        up = np.array([0, -math.cos(a), math.sin(a)])
+        knee = top + 16 * up
+        la = a - lift if front else a + lift * 0.7
+        lo = np.array([0, -math.cos(la), math.sin(la)])
+        hoof = knee + 17 * lo
+        P.append(Cap(top, knee, 5.2, 'coat', 3.6))
+        P.append(Cap(knee, hoof, 2.7, 'coat', 2.3))
+        P.append(Cap(hoof, hoof + lo * 3.5 + [0, 0, 1.0], 3.0, 'hoof'))
+    # tack
+    P.append(Ell(B((0, 58.5, 0)), (15, 2.4, 12.5), 'blanket', rot=R, clip={'ymin': 50}))
+    P.append(Ell(B((0, 60.5, -1)), (9.5, 2.6, 10), 'saddle', rot=R))
+    P.append(Cap(B((0, 61, 8)), B((0, 66, 9.5)), 1.6, 'saddle'))
+    if not ridden:
+        for sx in (-1, 1):
+            P.append(Cap(B((sx * 14, 59, 0)), B((sx * 14.5, 45, 1)), 0.9, 'saddle'))
+        P.append(Cap(B((0, 66, 47)), B((0, 60, 30)), 0.7, 'saddle'))
+    else:
+        # the cowboy, sitting in the saddle
+        lean = {'gallop': 3.5, 'walk': 1.0}.get(gait, 0.0)
+        rb = bob * 0.6 + (1.2 * math.cos(two_pi * phase * 2) if gait == 'gallop' else 0)
+        J = {}
+        pel = np.array([0, 64.0, -1.0])
+        J['pelvis'] = pel
+        for side, sx in (('R', -1), ('L', 1)):
+            J['hip' + side] = pel + [sx * 3.3, -1, 0]
+            J['knee' + side] = np.array([sx * 11.0, 57.0, 7.0])
+            J['ank' + side] = np.array([sx * 13.0, 42.0, 4.0])
+            J['toe' + side] = J['ank' + side] + [0, -1.2, 4.2]
+        up = np.array([0, 0, lean])
+        J['chest'] = np.array([0, 73.5, -1.0]) + up
+        J['neck'] = np.array([0, 82.0, -0.6]) + up * 1.4
+        J['head'] = np.array([0, 86.6, -0.4]) + up * 1.6
+        for side, sx in (('R', -6.7), ('L', 6.7)):
+            J['sh' + side] = np.array([sx, 78.5, -1.0]) + up * 1.3
+            J['el' + side] = J['sh' + side] + [sx * 0.1, -8.0, 4.0]
+            J['wr' + side] = np.array([sx * 0.35, 67.5, 10.0]) + up
+        rider = cowboy_prims(J, 'ride', False)
+        P += transform_prims(rider, rot_x(-pitch * 0.5), (0, rb, 0))
+        for side in ('R', 'L'):
+            P.append(Cap(J['wr' + side] + [0, rb, 0], B((0, 66, 47)), 0.7, 'saddle'))
+    return P
+
+
+def horse_frames():
+    frames = []
+    seq = [('idle', 0.0)] + [('walk', i / 6) for i in range(6)] + [('gallop', i / 6) for i in range(6)]
+    for d in range(8):
+        yaw = d * math.pi / 4
+        for ridden in (False, True):
+            for gait, ph in seq:
+                P = horse_prims(gait, ph, ridden)
+                frames.append(render(P, 64, 64, 32, 62, HORSE_SCALE, yaw, PITCH, HORSE_RAMPS))
+    return frames

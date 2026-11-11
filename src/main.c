@@ -135,6 +135,7 @@ void game_present(void) {
     dma_copy32(OAM_MEM, oam_shadow, sizeof(oam_shadow));
     REG_BG0HOFS = (cam.yaw >> 6) & 511;
     if (player_frame_src) dma_copy32((u8 *)OBJ_VRAM + TILE_PLAYER * 32, player_frame_src, 2048);
+    if (horse_frame_src) dma_copy32((u8 *)OBJ_VRAM + TILE_HORSE * 32, horse_frame_src, 2048);
     for (int i = 0; i < MAX_NPC; i++)
         if (npc_frame_src[i]) dma_copy32((u8 *)OBJ_VRAM + (TILE_NPC + i * 32) * 32, npc_frame_src[i], npc_frame_bytes[i]);
     if (bslots_used) dma_copy32((u8 *)OBJ_VRAM + TILE_BSLOT * 32, bslot_stage, bslots_used * 32);

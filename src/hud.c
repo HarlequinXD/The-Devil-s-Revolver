@@ -39,19 +39,21 @@ void hud_init(void) {
 }
 
 
+static int last_hint = -1;
+
 void hud_update(int title) {
     static int last_title = -1;
     static u32 last_bounty = 0xFFFFFFFF;
     static int last_ammo = -1, last_health = -1, last_reload = -1, last_perf = -1;
-    if (title != last_title) { hud_init(); last_title = title; last_bounty = 0xFFFFFFFF; last_ammo = -1; last_health = -1; }
+    if (title != last_title) { hud_init(); last_title = title; last_hint = -1; last_bounty = 0xFFFFFFFF; last_ammo = -1; last_health = -1; }
     if (title) {
         hud_text(5, 5, "THE DEVIL'S REVOLVER", 1);
         hud_text(9, 7, "A FRONTIER TALE", 0);
         if ((game_frame >> 5) & 1) hud_text(10, 12, "PRESS START", 1);
         else hud_clear_row(12);
         if (FREE_ROAM) {
-            hud_text(5, 17, "D-PAD MOVE    A RUN", 0);
-            hud_text(5, 18, "L/R CAMERA    FREE ROAM", 0);
+            hud_text(3, 17, "D-PAD MOVE  A RUN  L/R CAMERA", 0);
+            hud_text(7, 18, "B MOUNT / DISMOUNT", 0);
         } else {
             hud_text(1, 17, "D-PAD MOVE   A RUN   B SHOOT", 0);
             hud_text(1, 18, "L/R STRAFE   SELECT RELOAD", 0);
@@ -59,6 +61,11 @@ void hud_update(int title) {
         return;
     }
     if (FREE_ROAM) {
+        if (horse_hint != last_hint) {
+            last_hint = horse_hint;
+            hud_clear_row(18);
+            if (horse_hint == 1) hud_text(10, 18, "B  MOUNT", 1);
+        }
         if (show_perf) {
             static int lp = -1;
             int pc = (int)(perf_cycles / 2809);
