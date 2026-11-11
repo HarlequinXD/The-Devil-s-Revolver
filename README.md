@@ -28,7 +28,7 @@ on the GBA. Walk toward the camera and it just backs up instead of turning, so y
 line. The D-pad direction is locked to the camera angle at the moment you press it, so holding
 a direction never curves you round in a circle.
 
-Characters, the horse, tumbleweeds and dust stay one size at any distance instead of shrinking
+Characters, the horse, tumbleweeds and dust stay one size (`ACTOR_SIZE_PCT`) at any distance instead of shrinking
 and growing (set `SPRITE_SCALING 1` in `src/game.h` to bring the scaling back). Trees, cacti
 and rocks still use perspective.
 

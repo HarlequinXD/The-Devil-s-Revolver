@@ -357,7 +357,11 @@ void actors_draw(void) {
         else f = idle_cycle[(game_frame >> 5) & 3];                                 /* breathing */
         player_frame_src = spr_cowboy + (d * COWBOY_FRAMES + f) * FRAME_BYTES_COWBOY;
         s32 x = p.sx - 32, y = p.sy - 62;
+#if SPRITE_SCALING
         spr_add(p.Z, (y & 255) | (0 << 14), (x & 511) | (3 << 14), TILE_PLAYER | (1 << 10) | (PAL_COWBOY << 12));
+#else
+        put_scaled(&p, p.scale >> 2, 64, 64, 0, 3, TILE_PLAYER, PAL_COWBOY, 2, 0, 0, 0);   /* 4 art px per unit */
+#endif
         draw_shadow(&p, p.scale >> 2, p.Z + (3 << 8));
         if (player.shoot_timer > 10) {
             s32 gx = x + gun_tips[d * 2] - 8, gy = y + gun_tips[d * 2 + 1] - 8;

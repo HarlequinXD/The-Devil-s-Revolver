@@ -13,7 +13,8 @@
 #if SPRITE_SCALING
 #define ACTOR_SCALE(s) (s)
 #else
-#define ACTOR_SCALE(s) ((((1 << 20) / CAM_DIST) * FOCAL) >> 12)
+#define ACTOR_SIZE_PCT 70  /* size of moving sprites vs their old chase-distance size */
+#define ACTOR_SCALE(s) ((((((1 << 20) / CAM_DIST) * FOCAL) >> 12) * ACTOR_SIZE_PCT) / 100)
 #endif
 #define FREE_ROAM 1
 
