@@ -16,10 +16,8 @@
 #define ACTOR_SIZE_PCT 70  /* size of moving sprites vs their old chase-distance size */
 #define ACTOR_SCALE(s) ((((((1 << 20) / CAM_DIST) * FOCAL) >> 12) * ACTOR_SIZE_PCT) / 100)
 #endif
-/* trees, cacti, Joshua trees and bushes: size vs the original art scale,
-   and the most they may be blown up when right next to the camera (Q8) */
+/* trees, cacti, Joshua trees and bushes: size vs the original art scale */
 #define FLORA_SIZE_PCT  60
-#define FLORA_MAX_SCALE 320
 #define FREE_ROAM 1
 
 /* ---- projection (must match tools/common.py) ---- */
@@ -88,12 +86,14 @@ INLINE void cam_xform(s32 wx, s32 wy, s32 *X, s32 *Z) {
 typedef struct {
     s32 depth;
     u16 a0, a1, a2;
+    u16 pa;            /* affine: exact 1/scale (Q8) to get a matrix for, 0 = none */
 } SprEnt;
 
 #define MAX_SPR 120
 extern SprEnt spr_list[MAX_SPR];
 extern int spr_count;
 IWRAM_CODE void spr_add(s32 depth, u16 a0, u16 a1, u16 a2);
+IWRAM_CODE void spr_add_aff(s32 depth, u16 a0, u16 a1, u16 a2, u16 pa);
 
 /* ---- building renderer (IWRAM, ARM) ---- */
 typedef struct {

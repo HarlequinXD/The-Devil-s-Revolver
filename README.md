@@ -28,9 +28,10 @@ on the GBA. Walk toward the camera and it just backs up instead of turning, so y
 line. The D-pad direction is locked to the camera angle at the moment you press it, so holding
 a direction never curves you round in a circle.
 
-Trees, cacti and bushes are drawn at 60% of their original art scale and are capped so they
-don't balloon when the camera passes right by them (`FLORA_SIZE_PCT` / `FLORA_MAX_SCALE` in
-`src/game.h`).
+Sprites scale like *Doom*'s: every frame each one is drawn at exactly its projected size
+(1 / distance), not snapped to preset steps. The GBA has 32 hardware scaling matrices; they're
+handed out per frame to the exact scales in view, nearest sprites first. Trees, cacti and bushes
+are drawn at 60% of their original art scale (`FLORA_SIZE_PCT` in `src/game.h`).
 
 Your horse follows you around town when you're on foot — trotting to keep up, galloping if you
 get far ahead, and steering round buildings. Walk up to it and press **B** to climb on; the

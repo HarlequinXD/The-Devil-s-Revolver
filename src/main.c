@@ -67,7 +67,7 @@ static void video_init(void) {
     /* OBJ affine matrices: 31 scale levels + identity */
     for (int i = 0; i < 128; i++) { oam_shadow[i].attr0 = 0x200; oam_shadow[i].attr1 = 0; oam_shadow[i].attr2 = 0; }
     for (int m = 0; m < 32; m++) {
-        u16 pa = m < N_SCALE_LEVELS ? scale_level_pa[m] : 256;
+        u16 pa = m == 0 ? 128 : 256;                 /* 0: 2x for building canvases */
         oam_shadow[m * 4 + 0].fill = pa; oam_shadow[m * 4 + 1].fill = 0;
         oam_shadow[m * 4 + 2].fill = 0;  oam_shadow[m * 4 + 3].fill = pa;
     }
@@ -92,7 +92,31 @@ INLINE u32 cycles(void) {
 static u8 bucket_head[NBUCKET] ALIGN4;
 static u8 spr_next[MAX_SPR];
 
-static void build_oam(void) {
+/* Affine matrices: 0 is fixed at 2x (building canvases), 1..31 are handed
+   out each frame to the exact scales sprites ask for, nearest sprites first.
+   Scales within ~0.4% share a matrix (invisible); once all 31 are taken the
+   remaining (far, small) sprites use the closest one. */
+static u16 mat_pa[32];
+static int nmat;
+
+IWRAM_CODE static int matrix_for(u16 pa) {
+    s32 tol = (pa >> 8) + 1;
+    for (int k = nmat - 1, lim = nmat > 6 ? nmat - 6 : 1; k >= lim; k--) {   /* recent ones first */
+        s32 d = (s32)mat_pa[k] - pa;
+        if (d <= tol && d >= -tol) return k;
+    }
+    if (nmat < 32) { mat_pa[nmat] = pa; return nmat++; }
+    int best = 1; s32 bd = 0x7FFFFFFF;
+    for (int k = 1; k < 32; k++) {
+        s32 d = (s32)mat_pa[k] - pa;
+        if (d < 0) d = -d;
+        if (d < bd) { bd = d; best = k; }
+    }
+    return best;
+}
+
+IWRAM_CODE static void build_oam(void) {
+    nmat = 1;
     /* bucket sort by depth (2 world units per bucket), nearest first:
        a lower OAM index is drawn on top */
     dma_fill32(bucket_head, 0xFFFFFFFF, NBUCKET);
@@ -106,11 +130,17 @@ static void build_oam(void) {
     int n = 0;
     for (int b = 0; b < NBUCKET && n < 128; b++)
         for (int i = bucket_head[b]; i != 0xFF && n < 128; i = spr_next[i]) {
+            u16 a1 = spr_list[i].a1, pa = spr_list[i].pa;
+            if (pa) a1 |= matrix_for(pa) << 9;
             oam_shadow[n].attr0 = spr_list[i].a0;
-            oam_shadow[n].attr1 = spr_list[i].a1;
+            oam_shadow[n].attr1 = a1;
             oam_shadow[n].attr2 = spr_list[i].a2;
             n++;
         }
+    for (int k = 1; k < nmat; k++) {
+        oam_shadow[k * 4 + 0].fill = mat_pa[k];
+        oam_shadow[k * 4 + 3].fill = mat_pa[k];
+    }
     for (int i = n; i < 128; i++) oam_shadow[i].attr0 = 0x200;
 }
 

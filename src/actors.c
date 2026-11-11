@@ -387,7 +387,7 @@ void actors_draw(void) {
         put_scaled(&p, s, 32, 64, 2, 3, tile, PAL_OUTLAW, 2, 0, 0, 0);
         draw_shadow(&p, s, p.Z + (3 << 8));
         if (n->state == NS_AIM && n->timer < 6) {
-            s32 sq = scale_level_q8[scale_to_level[s > 1023 ? 1023 : s]];
+            s32 sq = s > 512 ? 512 : s;
             s32 gx = p.sx + (((gun_tips[16 + d * 2] - 16) * sq) >> 8) - 8;
             s32 gy = p.sy + (((gun_tips[16 + d * 2 + 1] - 62) * sq) >> 8) - 8;
             spr_add(p.Z - (2 << 8), (gy & 255), (gx & 511) | (1 << 14), FX_FLASH | (1 << 10) | (PAL_FX << 12));

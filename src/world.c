@@ -17,7 +17,13 @@ FxEnt fx[MAX_FX];
 IWRAM_CODE void spr_add(s32 depth, u16 a0, u16 a1, u16 a2) {
     if (spr_count >= MAX_SPR) return;
     SprEnt *e = &spr_list[spr_count++];
-    e->depth = depth; e->a0 = a0; e->a1 = a1; e->a2 = a2;
+    e->depth = depth; e->a0 = a0; e->a1 = a1; e->a2 = a2; e->pa = 0;
+}
+
+IWRAM_CODE void spr_add_aff(s32 depth, u16 a0, u16 a1, u16 a2, u16 pa) {
+    if (spr_count >= MAX_SPR) return;
+    SprEnt *e = &spr_list[spr_count++];
+    e->depth = depth; e->a0 = a0; e->a1 = a1; e->a2 = a2; e->pa = pa;
 }
 
 void world_init(void) {
@@ -55,18 +61,19 @@ IWRAM_CODE int project(s32 wx, s32 wy, Proj *p) {
 /* an affine, double-size sprite whose art bottom row (minus foot) sits on the ground point */
 IWRAM_CODE void put_scaled(const Proj *p, s32 scale_q8, int w, int h, int shape, int size, u16 tile, int pal,
                 int foot, int lift_px, int semi, s32 depth_bias) {
+    /* Doom-style: the sprite is drawn at exactly its projected size (1/distance);
+       build_oam() hands out the 32 hardware matrices so nearby sprites get exact
+       ones. The double-size box limits the zoom to 2x. */
     if (scale_q8 < 5) return;
-    if (scale_q8 > 1023) scale_q8 = 1023;
-    int lvl = scale_to_level[scale_q8];
-    s32 sq = scale_level_q8[lvl];
+    if (scale_q8 > 512) scale_q8 = 512;
     s32 cx = p->sx;
-    s32 cy = p->sy - (((h / 2 - foot) * sq) >> 8) - lift_px;
+    s32 cy = p->sy - (((h / 2 - foot) * scale_q8) >> 8) - lift_px;
     s32 x = cx - w, y = cy - h;                         /* double-size box is 2w x 2h */
     if (x + 2 * w < 0 || x >= SCREEN_W || y + 2 * h < 0 || y >= SCREEN_H) return;
     u16 a0 = (y & 255) | (3 << 8) | (shape << 14) | (semi ? (1 << 10) : 0);
-    u16 a1 = (x & 511) | (lvl << 9) | (size << 14);
+    u16 a1 = (x & 511) | (size << 14);
     u16 a2 = tile | (1 << 10) | (pal << 12);
-    spr_add(p->Z + depth_bias, a0, a1, a2);
+    spr_add_aff(p->Z + depth_bias, a0, a1, a2, (u16)(lut_recip[scale_q8] >> 8));   /* 65536 / scale */
 }
 
 IWRAM_CODE void draw_billboards(void) {
@@ -87,7 +94,6 @@ IWRAM_CODE void draw_billboards(void) {
         if (bill_defs[b->type].k16 >= 32 && p.Z > (380 << 8)) continue;  /* small props fade out early */
         const BillDef *d = &bill_defs[b->type];
         s32 s = (p.scale * bill_kinv[b->type]) >> 12;
-        if (b->type <= BILL_BUSH && s > FLORA_MAX_SCALE) s = FLORA_MAX_SCALE;
         put_scaled(&p, s, d->w, d->h, d->shape, d->size, bill_tile[b->type], d->pal, 2, 0, 0, 0);
         }
     }
