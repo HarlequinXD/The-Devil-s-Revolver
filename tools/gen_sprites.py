@@ -214,15 +214,18 @@ def cowboy_prims(J, pose, outlaw=False):
     P = []
     pants = 'pants'
     for s in 'RL':
-        P.append(Cap(J['ank' + s], J['toe' + s], 2.0, 'boot', 1.7))
-        P.append(Cap(J['ank' + s], J['ank' + s] + 0.42 * (J['knee' + s] - J['ank' + s]), 2.55, 'boot'))
-        P.append(Cap(J['knee' + s], J['ank' + s], 2.3, pants, 2.1))
+        if outlaw:
+            P.append(Cap(J['ank' + s], J['toe' + s], 2.0, 'boot', 1.7))
+            P.append(Cap(J['ank' + s], J['ank' + s] + 0.42 * (J['knee' + s] - J['ank' + s]), 2.55, 'boot'))
+        else:  # loafers, no socks
+            P.append(Cap(J['ank' + s] + [0, -0.4, 0], J['toe' + s], 1.75, 'shoe', 1.5))
+        P.append(Cap(J['knee' + s], J['ank' + s], 2.3, pants, 2.1 if outlaw else 1.95))
         P.append(Cap(J['hip' + s], J['knee' + s], 2.9, pants, 2.4))
     pel = J['pelvis']
     P.append(Ell(pel + [0, 0.6, 0], (5.5, 3.7, 3.7), pants))
     P.append(Ell(pel + [0, 3.0, 0], (5.7, 1.3, 3.9), 'belt'))
     P.append(Ell(pel + [0, 3.0, 3.8], (1.3, 0.9, 0.5), 'metal'))
-    if pose != 'shoot':  # holstered revolver
+    if pose != 'shoot' and outlaw:  # holstered revolver
         P.append(Cap(pel + [-5.6, 2.0, 0.6], pel + [-5.9, -4.0, 1.4], 1.6, 'belt'))
         P.append(Cap(pel + [-5.7, 2.4, 0.3], pel + [-6.0, 4.6, -1.6], 1.05, 'metal'))
     ch = J['chest']
@@ -232,6 +235,17 @@ def cowboy_prims(J, pose, outlaw=False):
     else:
         P.append(Ell(ch, (5.8, 7.6, 3.8), 'shirt'))
 
+        def blazer_pat(loc, n, m, base=ch[1]):
+            # open jacket: the tee shows down the front, lapels either side
+            x, y, z = loc[0] - ch[0], loc[1] - base, loc[2] - ch[2]
+            if z > 1.5 and abs(x) < 2.2 - 0.25 * max(0, y):
+                return 'shirt'
+            if z > 1.5 and abs(x) < 3.0 - 0.25 * max(0, y) and y > -2:
+                return 'lapel'
+            return m
+        P.append(Ell(ch + [0, -0.6, 0], (6.6, 8.6, 4.6), 'blazer', clip={'ymin': ch[1] - 9.2}, pat=blazer_pat))
+        sleeve = 'blazer'
+
         def poncho_pat(loc, n, m, base=ch[1]):
             y = loc[1] - base
             if -5.4 < y < -4.2 or -2.4 < y < -1.7:
@@ -239,11 +253,14 @@ def cowboy_prims(J, pose, outlaw=False):
             if -3.6 < y < -2.6 and (int((math.atan2(loc[0], loc[2]) + 4) * 6) % 2 == 0):
                 return 'stripe'
             return m
-        P.append(Ell(ch + [0, 0.6, 0], (9.2, 8.6, 6.0), 'poncho', clip={'ymin': ch[1] - 7.2}, pat=poncho_pat))
-        sleeve = 'poncho'
     for s in 'RL':
-        P.append(Cap(J['sh' + s], J['el' + s], 2.05, sleeve, 1.9))
-        P.append(Cap(J['el' + s], J['wr' + s], 1.85, sleeve, 1.6))
+        P.append(Cap(J['sh' + s], J['el' + s], 2.05 if outlaw else 2.2, sleeve, 1.9 if outlaw else 2.0))
+        if outlaw:
+            P.append(Cap(J['el' + s], J['wr' + s], 1.85, sleeve, 1.6))
+        else:  # sleeves pushed up to the elbow
+            mid = J['el' + s] + 0.4 * (J['wr' + s] - J['el' + s])
+            P.append(Cap(J['el' + s], mid, 2.0, sleeve, 1.9))
+            P.append(Cap(mid, J['wr' + s], 1.5, 'skin', 1.35))
         P.append(Ell(J['wr' + s] + (J['wr' + s] - J['el' + s]) * 0.18, (1.55, 1.75, 1.55), 'skin'))
     if pose == 'shoot':
         w = J['wrR']; d = (J['wrR'] - J['elR']); d /= np.linalg.norm(d)
@@ -255,6 +272,8 @@ def cowboy_prims(J, pose, outlaw=False):
 
     def face_pat(loc, n, m):
         y = loc[1] - hd[1]; x = loc[0] - hd[0]; z = loc[2] - hd[2]
+        if not outlaw and z > 2.0 and -0.2 < y < 1.3 and abs(x) < 3.2:
+            return 'shades'
         if z > 2.4 and 0.0 < y < 1.1 and 0.9 < abs(x) < 2.3:
             return 'eye'
         if z < -1.2 and y > 0.5:
@@ -268,7 +287,11 @@ def cowboy_prims(J, pose, outlaw=False):
         P.append(Ell(hd + [0, -2.2, 0.6], (4.25, 2.5, 3.9), 'bandana', clip={'zmin': hd[2] - 0.5}))
         P.append(Ell(nk + [0, 0, 0.3], (3.2, 1.6, 2.9), 'bandana'))
     else:
-        P.append(Ell(nk + [0, -0.4, 0.3], (3.4, 1.7, 3.0), 'scarf'))
+        # swept-back 80s hair instead of a hat
+        P.append(Ell(hd + [0, 1.4, -0.6], (4.25, 3.8, 4.4), 'hair', clip={'ymin': hd[1] + 0.6}))
+        P.append(Ell(hd + [0, 0.2, -1.6], (4.15, 4.0, 3.4), 'hair', clip={'zmax': hd[2] - 1.2}))
+        P.append(Ell(hd + [0, 3.4, 1.2], (3.3, 1.6, 2.6), 'hair'))
+        return P
     hat = hd + [0, 3.2, -0.3]
     crown = (4.5, 3.6, 4.8) if not outlaw else (4.6, 4.0, 4.9)
     P.append(Ell(hat + [0, 2.4, 0], crown, 'hat', clip={'ymin': hat[1] + 0.3}))
@@ -278,12 +301,12 @@ def cowboy_prims(J, pose, outlaw=False):
     return P
 
 
-COWBOY_PAL = ['#000000', '#1b120d', '#7d4a2e', '#bf855b', '#e6c09a', '#2a1c13', '#4b3324', '#74513a',
-              '#47301a', '#6c4a26', '#93693c', '#a8382a', '#2c3648', '#4c5d74', '#b9c2c8', '#3e2918']
-COWBOY_RAMPS = {'skin': [2, 3, 4], 'stubble': [2, 3], 'eye': [1], 'hair': [5, 6], 'hat': [5, 6, 7], 'hat2': [5, 6, 7],
-                'band': [15, 11], 'poncho': [8, 9, 10], 'stripe': [11, 4], 'shirt': [8, 9, 10], 'pants': [12, 13, 13],
-                'boot': [1, 15, 15], 'belt': [15, 6], 'metal': [12, 14, 14], 'scarf': [11, 11, 4], 'coat': [8, 9, 10],
-                'bandana': [11, 11, 4]}
+# the player: 1986 Miami - pastel teal blazer, white tee and trousers, loafers, shades
+COWBOY_PAL = ['#000000', '#14101a', '#8a5636', '#c88a62', '#ecb894', '#4a3424', '#8a6a3c', '#c0a060',
+              '#2f7f8c', '#58bcc2', '#a2ecea', '#a8a4b4', '#dedbe6', '#ffffff', '#9a6e48', '#22283a']
+COWBOY_RAMPS = {'skin': [2, 3, 4], 'stubble': [2, 3], 'eye': [1], 'hair': [5, 6, 7], 'blazer': [8, 9, 10],
+                'lapel': [8, 9], 'shirt': [11, 12, 13], 'pants': [11, 12, 13], 'shoe': [1, 14, 14],
+                'belt': [15, 14], 'metal': [15, 12, 13], 'shades': [15, 1]}
 OUTLAW_PAL = ['#000000', '#140e0c', '#7a4a30', '#b88058', '#dcb08a', '#121014', '#26222a', '#423c46',
               '#4a4238', '#6c604f', '#918268', '#a12d26', '#5e1814', '#353230', '#a7b0b6', '#3a2616']
 OUTLAW_RAMPS = {'skin': [2, 3, 4], 'stubble': [2, 3], 'eye': [1], 'hair': [5, 6], 'hat': [5, 6, 7], 'hat2': [5, 6, 7],
@@ -316,14 +339,17 @@ def dead_frame(outlaw):
     return render(prims, 64, 32, 33, 26, 1.0, math.pi / 2 * 0.85, PITCH + 0.25, ramps)
 
 
-# ------------------------------------------------------------------ scenery
-PLANT_PAL = ['#000000', '#142010', '#2c4a22', '#46702e', '#6f9a45', '#a3c06a', '#4a4a24', '#6f6a34',
-             '#9a9150', '#3a2a1c', '#5e4630', '#87694a', '#6a645c', '#a8a092', '#d8463a', '#e8dcb0']
-PROP_PAL = ['#000000', '#1d1610', '#5d5248', '#83756a', '#a8998a', '#cbbca8', '#6b5636', '#977a4c',
-            '#c2a36a', '#4a2e1a', '#6e4628', '#93633a', '#3b3b3f', '#74767c', '#e6dcc4', '#a07e52']
-PLANT_RAMPS = {'cactus': [2, 3, 4, 5], 'rib': [2, 2, 3, 4], 'spine': [15], 'flower': [14, 15], 'bark': [9, 10, 11],
-               'deadbark': [12, 13, 13], 'leaf': [6, 7, 8], 'jleaf': [2, 3, 4, 5], 'darkleaf': [2, 3]}
-PROP_RAMPS = {'rock': [2, 3, 4, 5], 'tw': [6, 7, 8], 'barrel': [9, 10, 11], 'hoop': [12, 13], 'bone': [3, 14, 14]}
+# ------------------------------------------------------------------ scenery (Miami)
+PLANT_PAL = ['#000000', '#0f2414', '#1f4a28', '#2f7036', '#4f9a44', '#86c35a', '#5a4a3a', '#857058',
+             '#b09a7a', '#3a2a1c', '#6a4a2a', '#3c6a3c', '#d8d0b8', '#d8306a', '#ff86b0', '#f2e08a']
+PROP_PAL = ['#000000', '#14141c', '#2a5a60', '#3f8a8e', '#62c0c0', '#e6e6ee', '#b4b4c4', '#7c7c90',
+            '#ff5aa0', '#c03070', '#ffd840', '#c89a20', '#e02828', '#3a3a48', '#fff2b8', '#ff9a40']
+PLANT_RAMPS = {'frond': [2, 3, 4, 5], 'frond2': [1, 2, 3], 'trunk': [6, 7, 8], 'ring': [6, 6, 7],
+               'coconut': [9, 10], 'shaft': [11, 3, 4], 'leaf': [2, 3, 4], 'darkleaf': [1, 2],
+               'flower': [13, 14], 'pistil': [15], 'smooth': [7, 8, 12]}
+PROP_RAMPS = {'pole': [1, 2, 3], 'globe': [6, 5, 14], 'pink': [9, 8], 'white': [6, 5], 'bin': [2, 3, 4],
+              'rim': [13, 7], 'hydrant': [11, 10, 14], 'cap': [12], 'gull': [7, 6, 5], 'tip': [1, 13],
+              'beak': [15, 10]}
 
 
 def hashf(*v):
@@ -331,87 +357,111 @@ def hashf(*v):
     return x - math.floor(x)
 
 
-def saguaro():
-    def rib(loc, n, m):
-        ang = math.atan2(n[0], n[2])
-        k = int((ang / (2 * math.pi) + 1) * 16)
-        if hashf(round(loc[0]), round(loc[1]), round(loc[2])) > 0.93:
-            return 'spine'
-        return 'rib' if k % 2 else 'cactus'
-    P = [Cap((0, 0, 0), (0, 52, 0), 5.2, 'cactus', 4.6, pat=rib),
-         Cap((0, 21, 0), (8.5, 23, 0), 3.4, 'cactus', pat=rib), Cap((9, 22.5, 0), (10, 39, 0), 3.3, 'cactus', 3.0, pat=rib),
-         Cap((0, 29, 0), (-7.5, 31, 0.5), 3.2, 'cactus', pat=rib), Cap((-8, 30.5, 0.5), (-8.8, 43, 0.5), 3.0, 'cactus', 2.7, pat=rib),
-         Ell((0, 56.5, 0), (1.6, 1.3, 1.6), 'flower'), Ell((-2.5, 55, 1), (1.3, 1.1, 1.3), 'flower')]
-    return render(P, 32, 64, 16, 62, 1.0, 0.3, 0.35, PLANT_RAMPS)
+def fronds(P, top, n, L, droop, seed, mat='frond'):
+    rng = np.random.default_rng(seed)
+    for i in range(n):
+        ang = 2 * math.pi * i / n + rng.uniform(-0.2, 0.2)
+        d = np.array([math.cos(ang), 0, math.sin(ang)])
+        prev = np.array(top, float)
+        steps = 6
+        for k in range(1, steps + 1):
+            t = k / steps
+            pt = np.array(top, float) + d * L * t + np.array([0, 3.5 * t - droop * t * t, 0])
+            w = 2.6 * (1 - 0.6 * t)
+            P.append(Cap(prev, pt, w, mat if (i + k) % 3 else 'frond2', w * 0.8))
+            prev = pt
 
 
-def joshua():
-    P = [Cap((0, 0, 0), (0, 26, 0), 3.4, 'bark', 2.6)]
-    tips = []
-    for (a, b, c) in (((0, 26, 0), (-12, 36, 2), (-16, 47, 2)), ((0, 26, 0), (10, 34, -1), (14, 44, -2)),
-                      ((0, 24, 0), (3, 38, 4), (1, 50, 3)), ((-12, 36, 2), (-22, 40, 0), (-24, 46, 0)),
-                      ((10, 34, -1), (20, 38, 2), (23, 44, 2))):
-        P.append(Cap(a, b, 2.2, 'bark', 1.8)); P.append(Cap(b, c, 1.8, 'bark', 1.5)); tips.append(c)
-
-    def spiky(loc, n, m):
-        return 'jleaf' if hashf(round(loc[0] * 2), round(loc[1] * 2), round(loc[2] * 2)) > 0.25 else 'darkleaf'
-    for t in tips:
-        P.append(Ell(np.array(t) + [0, 2.5, 0], (4.5, 4.8, 4.5), 'jleaf', pat=spiky))
-    return render(P, 64, 64, 32, 62, 1.0, 0.2, 0.35, PLANT_RAMPS)
-
-
-def dead_tree():
-    P = [Cap((0, 0, 0), (1, 30, 0), 3.0, 'deadbark', 2.2)]
-    for (a, b) in (((1, 30, 0), (-12, 44, 1)), ((1, 30, 0), (10, 46, -1)), ((1, 28, 0), (3, 52, 2)),
-                   ((-12, 44, 1), (-20, 50, 0)), ((-12, 44, 1), (-10, 55, 0)), ((10, 46, -1), (18, 54, 1)),
-                   ((0, 18, 0), (12, 26, 2)), ((12, 26, 2), (17, 30, 1))):
-        P.append(Cap(a, b, 1.6, 'deadbark', 0.8))
-    return render(P, 64, 64, 32, 62, 1.0, 0.0, 0.35, PLANT_RAMPS)
+def palm():
+    """coconut palm: leaning ringed trunk, drooping fronds, coconuts"""
+    P = []
+    prev = np.array([0, 0, 0.])
+    for k in range(1, 9):
+        t = k / 8
+        pt = np.array([7 * t * t, 50 * t, 0.])
+        def rings(loc, n, m, y0=prev[1]):
+            return 'ring' if int(loc[1]) % 3 == 0 else m
+        P.append(Cap(prev, pt, 2.6 - 0.6 * t, 'trunk', 2.6 - 0.6 * (t + 0.125), pat=rings))
+        prev = pt
+    fronds(P, prev + [0, 1, 0], 9, 19, 13, 3)
+    for c in ((1.5, -1.2, 1.5), (-1.5, -1.5, 1), (0.5, -1.4, -1.8)):
+        P.append(Ell(prev + c, (1.5, 1.6, 1.5), 'coconut'))
+    return render(P, 64, 64, 28, 62, 1.0, 0.4, 0.3, PLANT_RAMPS)
 
 
-def bush():
+def royal():
+    """royal palm: straight smooth grey trunk, green crownshaft, arching fronds"""
+    P = [Cap((0, 0, 0), (0, 46, 0), 3.2, 'smooth', 2.6), Cap((0, 45, 0), (0, 54, 0), 2.6, 'shaft', 2.2)]
+    fronds(P, (0, 55, 0), 8, 17, 10, 7)
+    P.append(Cap((0, 54, 0), (0, 62, 0), 1.2, 'frond', 0.5))
+    return render(P, 64, 64, 32, 62, 1.0, 0.0, 0.3, PLANT_RAMPS)
+
+
+def fanpalm():
+    """short sabal palm with a round fan head"""
+    P = [Cap((0, 0, 0), (0, 22, 0), 2.6, 'trunk', 2.2)]
+    fronds(P, (0, 23, 0), 11, 11, 5, 11)
+    return render(P, 32, 64, 16, 62, 1.0, 0.0, 0.35, PLANT_RAMPS)
+
+
+def hibiscus():
     P = []
     rng = np.random.default_rng(2)
 
     def leafy(loc, n, m):
-        return 'leaf' if hashf(round(loc[0] * 1.5), round(loc[1] * 1.5), round(loc[2] * 1.5)) > 0.2 else 'darkleaf'
+        h = hashf(round(loc[0] * 1.5), round(loc[1] * 1.5), round(loc[2] * 1.5))
+        return 'leaf' if h > 0.22 else 'darkleaf'
     for i in range(7):
         c = (rng.uniform(-7, 7), rng.uniform(4, 11), rng.uniform(-3, 3))
         P.append(Ell(c, (rng.uniform(3.5, 5.5), rng.uniform(3.5, 5), rng.uniform(3.5, 5)), 'leaf', pat=leafy))
+    for i in range(7):
+        c = np.array((rng.uniform(-8, 8), rng.uniform(6, 14), rng.uniform(2, 5)))
+        P.append(Ell(c, (1.6, 1.4, 1.2), 'flower'))
+        P.append(Ell(c + [0, 0, 1.0], (0.5, 0.5, 0.5), 'pistil'))
     return render(P, 32, 32, 16, 30, 1.0, 0.0, 0.4, PLANT_RAMPS)
 
 
-def rock(seed):
-    rng = np.random.default_rng(seed)
-
-    def bumpy(loc, n, m):
-        return m
-    P = [Ell((0, 5, 0), (10, 7.5, 8), 'rock', rot=rot_z(rng.uniform(-0.2, 0.2)), clip={'ymin': 0.3}),
-         Ell((rng.uniform(-6, 6), 9, rng.uniform(-2, 2)), (5, 5, 5), 'rock', clip={'ymin': 0.3})]
-    return render(P, 32, 32, 16, 30, 1.0, rng.uniform(0, 6), 0.4, PROP_RAMPS)
+def lamp():
+    """art-deco street lamp"""
+    P = [Cap((0, 0, 0), (0, 3, 0), 2.6, 'pole', 2.0), Cap((0, 3, 0), (0, 50, 0), 1.2, 'pole', 0.9),
+         Ell((0, 50, 0), (2.4, 0.9, 2.4), 'pole'), Ell((0, 54, 0), (3.2, 3.6, 3.2), 'globe'),
+         Ell((0, 58, 0), (1.4, 0.8, 1.4), 'pole')]
+    return render(P, 32, 64, 16, 62, 1.0, 0.0, 0.35, PROP_RAMPS)
 
 
-def barrel():
+def umbrella():
+    def stripes(loc, n, m):
+        return 'pink' if int((math.atan2(loc[0], loc[2]) + 4) * 8 / math.pi) % 2 else 'white'
+    P = [Cap((0, 0, 0), (0, 20, 0), 0.7, 'pole'),
+         Ell((0, 18, 0), (14, 5.5, 14), 'white', clip={'ymin': 18.2}, pat=stripes),
+         Ell((0, 23.8, 0), (0.8, 0.8, 0.8), 'pole')]
+    return render(P, 32, 32, 16, 30, 1.0, 0.3, 0.45, PROP_RAMPS)
+
+
+def trash_bin():
     def bands(loc, n, m):
-        return 'hoop' if (2.6 < loc[1] < 3.6 or 13.4 < loc[1] < 14.4) else m
-    P = [Ell((0, 8.5, 0), (6.4, 10.5, 6.4), 'barrel', clip={'ymin': 0.2, 'ymax': 16.8}, pat=bands)]
+        return 'rim' if loc[1] > 10.5 else m
+    P = [Ell((0, 6, 0), (4.4, 6.2, 4.4), 'bin', clip={'ymin': 0.2, 'ymax': 11.6}, pat=bands)]
+    return render(P, 32, 32, 16, 30, 1.0, 0.0, 0.45, PROP_RAMPS)
+
+
+def hydrant():
+    P = [Cap((0, 0, 0), (0, 7, 0), 2.2, 'hydrant', 2.0), Ell((0, 7.5, 0), (2.2, 1.6, 2.2), 'cap'),
+         Cap((-3.2, 4.6, 0), (3.2, 4.6, 0), 0.9, 'hydrant'), Ell((0, 0.6, 0), (3.0, 0.8, 3.0), 'hydrant')]
     return render(P, 32, 32, 16, 30, 1.0, 0.4, 0.45, PROP_RAMPS)
 
 
-def tumbleweed(f):
-    def holes(loc, n, m):
-        h = hashf(round(loc[0] * 1.3 + f * 3), round(loc[1] * 1.3), round(loc[2] * 1.3))
-        if h < 0.3:
-            return None
-        return 'tw'
-    P = [Ell((0, 7.5, 0), (7.5, 7.2, 7.5), 'tw', pat=holes), Ell((0, 7.5, 0), (4.5, 4.4, 4.5), 'tw')]
-    return render(P, 32, 32, 16, 30, 1.0, f * 0.7, 0.4, PROP_RAMPS)
-
-
-def skull():
-    P = [Ell((0, 2.5, 0), (3.2, 2.4, 4.2), 'bone'), Cap((-2.5, 3.5, -2), (-8, 6, -3), 0.9, 'bone', 0.5),
-         Cap((2.5, 3.5, -2), (8, 6, -3), 0.9, 'bone', 0.5)]
-    return render(P, 32, 32, 16, 30, 1.0, 0.3, 0.6, PROP_RAMPS)
+def gull(f):
+    """seagull with wings up (f=0) or down (f=1), seen from slightly below"""
+    lift = 4.5 if f == 0 else -2.5
+    P = [Ell((0, 12, 0), (1.8, 1.7, 4.2), 'gull'), Ell((0, 13, 3.8), (1.4, 1.4, 1.4), 'gull'),
+         Cap((0, 13, 5.0), (0, 12.6, 6.6), 0.45, 'beak'), Cap((0, 12, -3.5), (0, 12.3, -6.0), 1.0, 'gull', 0.5)]
+    for sgn in (-1, 1):
+        mid = np.array([sgn * 5.5, 12 + lift * 0.6, 0.3])
+        tip = np.array([sgn * 11, 12 + lift, -1.0])
+        P.append(Cap((sgn * 1.2, 12.6, 0.5), mid, 1.4, 'gull', 1.1))
+        P.append(Cap(mid, tip, 1.0, 'tip', 0.5))
+    return render(P, 32, 32, 16, 30, 1.0, 0.6, -0.15, PROP_RAMPS)
 
 
 # ------------------------------------------------------------------ effects (2D)

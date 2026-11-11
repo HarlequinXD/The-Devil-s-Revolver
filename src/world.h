@@ -38,7 +38,6 @@ void actors_update(u16 keys, u16 pressed);
 void actors_draw(void);
 void camera_follow(int snap);
 extern const u8 *player_frame_src;
-extern const u8 *horse_frame_src;
 extern const u8 *npc_frame_src[MAX_NPC];
 extern u16 npc_frame_bytes[MAX_NPC];
 extern u8 tumble_frame;

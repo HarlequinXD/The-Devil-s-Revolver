@@ -53,6 +53,13 @@ def main():
     cf = CFile('ground')
     cf.array('u8', 'ground_tiles', tiles, per_line=32)
     cf.array('u8', 'ground_map', tmap, per_line=32)
+    # 1 bit per ground tile: set where you can't walk (sea, bay, seawall)
+    wet = [0] * (128 * 128 // 8)
+    for y in range(128):
+        for x in range(128):
+            if ground.LAST_KIND[y][x] in ('deep', 'shallow', 'surf', 'seawall'):
+                wet[(y * 128 + x) >> 3] |= 1 << (x & 7)
+    cf.array('u8', 'water_bits', wet, per_line=32)
     decls += cf.write()
     if PREVIEW:
         Image.fromarray(preview).save(os.path.join(ROOT, 'docs', 'map_preview.png'))
@@ -64,7 +71,7 @@ def main():
     for bank, p in sky_pals.items():
         bgpal[bank * 16:bank * 16 + 16] = p
     bgpal[HUD_BANK * 16:HUD_BANK * 16 + 16] = hud_pal
-    bgpal[0] = rgb15((238, 226, 205))  # backdrop = horizon haze
+    bgpal[0] = rgb15((255, 214, 168))  # backdrop = horizon haze
     full_map = []
     for y in range(32):
         for x in range(64):
@@ -135,15 +142,13 @@ def main():
             v = R @ tip
             tips += [int(round(wide / 2 + v[0])), int(round(62 - v[1]))]
     cf.array('s8', 'gun_tips', tips)
-    horse = spr.horse_frames()
-    cf.array('u8', 'spr_horse', [b for f in horse for b in sprite_to_4bpp(f)], per_line=32)
     cf.array('u8', 'spr_outlaw_dead', sprite_to_4bpp(spr.dead_frame(True)), per_line=32)
     bills = [  # name, image, palette bank, art px per world unit, collision radius
-        ('saguaro', spr.saguaro(), 2, 1.25, 4), ('joshua', spr.joshua(), 2, 1.6, 3),
-        ('deadtree', spr.dead_tree(), 2, 1.6, 3), ('bush', spr.bush(), 2, 2.0, 0),
-        ('rock', spr.rock(1), 3, 2.0, 6), ('rock2', spr.rock(5), 3, 2.6, 4),
-        ('barrel', spr.barrel(), 3, 2.6, 4), ('skull', spr.skull(), 3, 3.0, 0),
-        ('tumble0', spr.tumbleweed(0), 3, 3.0, 0), ('tumble1', spr.tumbleweed(1), 3, 3.0, 0)]
+        ('palm', spr.palm(), 2, 1.25, 3), ('royal', spr.royal(), 2, 1.15, 3),
+        ('fanpalm', spr.fanpalm(), 2, 1.9, 2), ('hibiscus', spr.hibiscus(), 2, 2.4, 0),
+        ('lamp', spr.lamp(), 3, 2.1, 2), ('umbrella', spr.umbrella(), 3, 1.5, 0),
+        ('bin', spr.trash_bin(), 3, 3.0, 3), ('hydrant', spr.hydrant(), 3, 3.4, 2),
+        ('gull0', spr.gull(0), 3, 3.0, 0), ('gull1', spr.gull(1), 3, 3.0, 0)]
     L = ['const BillDef bill_defs[%d] = {' % len(bills)]
     for name, img, pal, k, rad in bills:
         h, w = img.shape
@@ -159,50 +164,77 @@ def main():
     cf.array('u8', 'fx_spark', sprite_to_4bpp(spr.fx_spark()), per_line=32)
     objpal = [0] * 256
     for bank, pal in ((0, spr.COWBOY_PAL), (1, spr.OUTLAW_PAL), (2, spr.PLANT_PAL), (3, spr.PROP_PAL),
-                      (4, spr.FX_PAL), (5, town.TOWN_PAL), (6, spr.HORSE_PAL)):
+                      (4, spr.FX_PAL), (5, town.TOWN_PAL)):
         objpal[bank * 16:bank * 16 + 16] = spr.pal15(pal)
     cf.array('u16', 'obj_palette', objpal)
     decls += cf.write()
 
     # ---------------------------------------------------------- world placement
-    rnd = random.Random(1885)
+    rnd = random.Random(1986)
     boxes = [town.footprint(b) for b in town.BUILDINGS]
+    B = {name: k for k, (name, *_r) in enumerate(bills)}
+    places = []
 
-    def blocked(x, y, margin):
+    def free(x, y, margin=6, gap=10):
         for (x0, y0, x1, y1) in boxes:
             if x0 - margin < x < x1 + margin and y0 - margin < y < y1 + margin:
-                return True
-        if town.STREET_X0 - 24 < x < town.STREET_X1 + 24 and y > town.STREET_Y0 - 40:
-            return True
-        if town.CROSS_X0 - 10 < x < town.CROSS_X1 + 10 and town.CROSS_Y0 - 20 < y < town.CROSS_Y1 + 20:
-            return True
-        if 820 < y < 870:
-            return True
-        return False
-    places = []
-    weights = [(0, 26), (1, 8), (2, 7), (3, 30), (4, 12), (5, 10), (7, 3)]
-    tot = sum(w for _, w in weights)
-    tries = 0
-    while len(places) < 230 and tries < 20000:
-        tries += 1
-        x, y = rnd.uniform(16, WORLD - 16), rnd.uniform(16, WORLD - 16)
-        in_town = 300 < x < 740 and 160 < y < 780
-        if blocked(x, y, 18) or (in_town and rnd.random() < 0.85):
+                return False
+        return not any((px - x) ** 2 + (py - y) ** 2 < gap * gap for px, py, _ in places)
+
+    def put(x, y, kind, gap=10):
+        if 8 < x < WORLD - 8 and 8 < y < WORLD - 8 and free(x, y, gap=gap):
+            places.append((int(x), int(y), B[kind]))
+
+    def on_crossing(y):
+        return any(s * 8 - 16 <= y < (s + town.ROAD_W) * 8 + 16 for s in town.STREETS)
+
+    ylo, yhi = (town.LAND_Y0 + 3) * 8, (town.LAND_Y1 - 2) * 8
+    # palm park along Ocean Drive: two rows of coconut palms, hibiscus between
+    px0, px1 = town.PARK_X0 * 8, (town.PARK_X1 + 1) * 8
+    board = [r * 8 for r in town.BOARDWALK_ROWS]
+    for y in range(ylo, yhi, 46):
+        if any(b - 10 < y < b + 18 for b in board):
             continue
-        r = rnd.uniform(0, tot)
-        for t, w in weights:
-            r -= w
-            if r <= 0:
-                break
-        if any((px - x) ** 2 + (py - y) ** 2 < 18 ** 2 for px, py, _ in places):
-            continue
-        places.append((int(x), int(y), t))
-    # barrels beside the buildings on the boardwalk edges
-    for b in town.BUILDINGS[:12]:
+        put(px0 + 9 + rnd.uniform(-2, 2), y + rnd.uniform(-4, 4), 'palm')
+        put(px1 - 9 + rnd.uniform(-2, 2), y + 23 + rnd.uniform(-4, 4), 'palm')
         if rnd.random() < 0.6:
-            x0, y0, x1, y1 = town.footprint(b)
-            x = 472 if b[3] == 3 else 552
-            places.append((x, int(y0 + rnd.uniform(4, 12)), 6))
+            put(px0 + 30 + rnd.uniform(-6, 6), y + 8, 'hibiscus')
+    # the beach: umbrellas, a few palms and fan palms near the park
+    bx0, bx1 = town.BEACH_X0 * 8 + 6, town.WET_X0 * 8 - 10
+    for _ in range(400):
+        x, y = rnd.uniform(bx0, bx1), rnd.uniform(ylo, yhi)
+        if any(b - 8 < y < b + 16 for b in board):
+            continue
+        r = rnd.random()
+        kind = 'umbrella' if x > bx0 + 30 else ('fanpalm' if r < 0.5 else 'palm')
+        if kind != 'umbrella' and r > 0.7:
+            continue
+        put(x, y, kind, gap=22)
+        if sum(1 for p in places if p[2] in (B['umbrella'], B['fanpalm'])) > 70:
+            break
+    # avenues: royal palms down Collins and Washington, deco lamps on Ocean Drive and West Ave
+    for k, a in enumerate(town.AVENUES):
+        xw, xe = a * 8 - 5, (a + town.ROAD_W) * 8 + 5
+        for y in range(ylo + 10, yhi, 48):
+            if on_crossing(y):
+                continue
+            if k in (1, 2):
+                put(xw, y, 'royal'); put(xe, y + 24, 'royal')
+                if rnd.random() < 0.25:
+                    put(xe, y + 4, 'hydrant')
+            elif k == 3:
+                put(xw, y, 'lamp')
+                put(xe, y + 24, 'lamp')
+            else:
+                put(xe, y, 'lamp')
+                put(xw, y + 24, 'fanpalm')
+            if rnd.random() < 0.2:
+                put(xw + rnd.choice((-6, 0)), y + 14, 'bin')
+    # cross streets: lamps at the corners
+    for s in town.STREETS:
+        for a in town.AVENUES:
+            for (dx, dy) in ((-12, -12), ((town.ROAD_W * 8) + 12, (town.ROAD_W * 8) + 12)):
+                put(a * 8 + dx, s * 8 + dy, 'lamp')
     places.sort(key=lambda p: (p[1] // 128) * 8 + p[0] // 128)
     starts = [0] * 65
     for p in places:
@@ -214,7 +246,7 @@ def main():
     cf.raw('const BillPlace world_bills[%d] = {\n%s\n};\n' % (
         len(places), '\n'.join('  {%d, %d, %d, 0},' % p for p in places)),
         'extern const BillPlace world_bills[%d];' % len(places))
-    spawns = [(512, 330), (500, 420), (520, 640), (420, 512), (610, 512), (530, 700), (700, 512), (512, 240)]
+    spawns = [(400, 330), (500, 420), (530, 640), (300, 512), (600, 520), (560, 700), (230, 300), (460, 240)]
     cf.raw('const s16 npc_spawns[%d][2] = {\n%s\n};\n' % (len(spawns), '\n'.join('  {%d, %d},' % s for s in spawns)),
            'extern const s16 npc_spawns[%d][2];' % len(spawns))
     decls += cf.write()
@@ -224,7 +256,7 @@ def main():
         'N_GROUND_TILES': ntiles, 'N_SKY_TILES': len(sky_tiles), 'N_FONT_TILES': len(font_tiles),
         'N_TOWN_TEX': len(town.TEXTURES), 'N_MESHES': len(town.MESHES), 'N_BUILDINGS': len(town.BUILDINGS),
         'N_BILL_DEFS': len(bills), 'N_WORLD_BILLS': len(places), 'N_NPC_SPAWNS': len(spawns),
-        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES, 'COWBOY_FRAMES': spr.N_FRAMES_COWBOY, 'HORSE_FRAMES': spr.HORSE_FRAMES, 'HORSE_K16': int(round(spr.HORSE_K * 16)),
+        'N_SCALE_LEVELS': 31, 'CHAR_FRAMES': spr.N_FRAMES, 'COWBOY_FRAMES': spr.N_FRAMES_COWBOY,
         'GEN_HORIZON': HORIZON, 'GEN_FOCAL': FOCAL, 'GEN_CAM_H': CAM_H,
     }
     with open(os.path.join(OUT, 'assets.h'), 'w') as f:
@@ -232,7 +264,7 @@ def main():
         for k, v in consts.items():
             f.write('#define %s %d\n' % (k, v))
         f.write('#define FONT_CHARS "%s"\n\n' % ground.FONT_CHARS.replace('\\', '\\\\'))
-        for name in ('saguaro', 'joshua', 'deadtree', 'bush', 'rock', 'rock2', 'barrel', 'skull', 'tumble0', 'tumble1'):
+        for name in [b[0] for b in bills]:
             f.write('#define BILL_%s %d\n' % (name.upper(), [b[0] for b in bills].index(name)))
         f.write('\n' + '\n'.join(decls) + '\n\n#endif\n')
     print('ground tiles %d, sky tiles %d, font tiles %d, textures %d, meshes %d, buildings %d, billboards %d'
@@ -267,6 +299,7 @@ typedef struct { const u8 *tiles; u16 bytes; u8 w, h, shape, size, pal, k16, rad
 typedef struct { s16 x, y; u8 type, pad; } BillPlace;
 
 #define WALL_DOUBLE 1
+#define WALL_CUTTOP 2   /* top of the wall has see-through cut-outs */
 
 '''
 

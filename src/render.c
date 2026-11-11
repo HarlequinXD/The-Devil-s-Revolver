@@ -73,6 +73,7 @@ typedef struct {
     s32 iza, izb, sxa16, sxb16;          /* 2^20/Z and screen x (Q4) */
     const MWall *w;
     u8 shade;
+    s16 occ_top, occ_bot;                /* rows this wall surely covers (for occlusion) */
 } WallJob;
 
 typedef struct {
@@ -84,6 +85,7 @@ typedef struct {
 } PolyJob;
 
 static WallJob wjobs[40];
+static u8 occ_top[SCREEN_W + 2], occ_bot[SCREEN_W + 2];   /* see occ_add() */
 static PolyJob pjobs[24] EWRAM_BSS;
 
 static int cv_sx0, cv_sy0, cv_s, cv_w, cv_h;
@@ -153,6 +155,19 @@ IWRAM_FN static void draw_wall(const WallJob *j) {
         s32 r1 = (bot16 - rowbase16 + (16 * s - 1)) >> sh;
         if (r1 > cv_h) r1 = cv_h;
         if (r0 >= r1) continue;
+        {   /* skip the part of the column already hidden by a nearer building */
+            s32 sx = cv_sx0 + c * s;
+            if (sx >= 0 && sx < SCREEN_W) {
+                s32 ot = occ_top[sx], ob = occ_bot[sx];
+                if (s == 2) { if (occ_top[sx + 1] > ot) ot = occ_top[sx + 1]; if (occ_bot[sx + 1] < ob) ob = occ_bot[sx + 1]; }
+                if (ot != 255 && ob > ot) {
+                    s32 y0 = cv_sy0 + r0 * s, y1 = cv_sy0 + r1 * s;
+                    if (ot <= y0 && ob > y0) { s32 n = (ob - cv_sy0) >> (s - 1); if (n > r0) r0 = n; }
+                    if (ob >= y1 && ot < y1) { s32 n = (ot - cv_sy0 + s - 1) >> (s - 1); if (n < r1) r1 = n; }
+                    if (r0 >= r1) continue;
+                }
+            }
+        }
         s32 v = (w->v0 << 16) + mul64sh(vstep, rowbase16 + (r0 << sh) - top16, 4);
         const u8 *col = pix + ((uc >> 4) & wm);
         u8 *dst = canvas + r0 * CSTRIDE + c;
@@ -368,6 +383,14 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
         if (tb < by0) by0 = tb;
         if (ga > by1) by1 = ga;
         if (gb > by1) by1 = gb;
+        /* solid part of the wall: ground up to its top (less any cut-out parapet) */
+        j->occ_top = -1;
+        if (w->y0 == 0 && !(w->flags & WALL_DOUBLE)) {
+            s32 hs = (CAM_H - (w->y1 - ((w->flags & WALL_CUTTOP) ? 9 : 0))) * FOCAL;
+            s32 sa = HORIZON + mul64sh(hs, iza, 20), sb = HORIZON + mul64sh(hs, izb, 20);
+            j->occ_top = sa > sb ? sa : sb;
+            j->occ_bot = ga < gb ? ga : gb;
+        }
     }
     for (int i = 0; i < m->npolys; i++) {
         const MPoly *p = &m->polys[i];
@@ -430,7 +453,7 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
         }
         shade_ready = 1;
     }
-    int s = (w <= 30 && h <= 36) ? 1 : 2;
+    int s = (w <= 22 && h <= 26) ? 1 : 2;
     int cw = (w + s - 1) / s, ch = (h + s - 1) / s;           /* canvas pixels needed */
     int nx, ny, ow = 64, oh = 64;
     if (cw <= 64 && ch <= 64) {
@@ -447,7 +470,40 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
     prep_nw = nw; prep_np = np; prep_bx0 = bx0; prep_by0 = by0; prep_s = s; prep_nx = nx; prep_ny = ny;
     prep_ow = ow; prep_oh = oh;
     cv->sx0 = bx0; cv->sy0 = by0; cv->scale = s; cv->nx = nx; cv->ny = ny; cv->ow = ow; cv->oh = oh;
+    cv->bx1 = bx1; cv->by1 = by1;
     return tiles;
+}
+
+/* Occlusion: per screen column, the rows already hidden by a solid wall of a
+   nearer building. Buildings are drawn nearest first, so one fully inside
+   what is already covered can be skipped. */
+IWRAM_CODE void occ_reset(void) {
+    for (int x = 0; x < SCREEN_W + 2; x++) { occ_top[x] = 255; occ_bot[x] = 0; }
+}
+
+IWRAM_CODE int occ_hidden(const Canvas *cv) {
+    int y0 = cv->sy0, y1 = cv->by1;
+    for (int x = cv->sx0; x < cv->bx1; x++)
+        if (occ_top[x] > y0 || occ_bot[x] < y1) return 0;
+    return 1;
+}
+
+IWRAM_CODE void occ_add(void) {           /* walls of the building just prepared */
+    for (int i = 0; i < prep_nw; i++) {
+        const WallJob *j = &wjobs[i];
+        if (j->occ_top < 0) continue;
+        s32 t = j->occ_top, b = j->occ_bot;
+        if (t < 0) t = 0;
+        if (b > SCREEN_H) b = SCREEN_H;
+        if (b - t < 4) continue;
+        s32 x0 = (j->sxa16 >> 4) + 1, x1 = j->sxb16 >> 4;   /* inside the edges */
+        if (x0 < 0) x0 = 0;
+        if (x1 > SCREEN_W) x1 = SCREEN_W;
+        for (s32 x = x0; x < x1; x++) {
+            /* keep whichever span is taller; spans from one wall are never merged */
+            if (occ_top[x] == 255 || (b - t) > (occ_bot[x] - occ_top[x])) { occ_top[x] = t; occ_bot[x] = b; }
+        }
+    }
 }
 
 /* draw the building prepared by bld_prepare into 4bpp tiles at `staging` */

@@ -6,6 +6,9 @@
 
 void ppu_render(u32 *out);
 static u32 fb[240 * 160];
+#ifdef BLD_DEBUG
+int dbg_nb, dbg_nv;
+#endif
 
 static void save(const char *name) {
     FILE *f = fopen(name, "wb");
@@ -28,7 +31,11 @@ int main(int argc, char **argv) {
             game_present();
             ppu_render(fb);
         }
-        if (name[0]) save(name);
+        if (name[0]) { save(name);
+#ifdef BLD_DEBUG
+            extern int dbg_nb, dbg_nv; printf("%s visible %d tiles %d\n", name, dbg_nb, dbg_nv);
+#endif
+        }
     }
     return 0;
 }

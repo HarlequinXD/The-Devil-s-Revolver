@@ -6,7 +6,7 @@
 
 /* Free roam: no outlaws, no shooting - just explore the town and desert.
    Set to 0 to bring back the bounty-hunting gameplay. */
-/* 0: moving sprites (player, horse, outlaws, tumbleweeds, dust, shadows)
+/* 0: moving sprites (player, outlaws, gulls, dust, shadows)
    stay one size at any distance - the size they have at the chase-camera
    distance - instead of shrinking and growing. Scenery keeps perspective. */
 #define SPRITE_SCALING 1
@@ -16,8 +16,8 @@
 #define ACTOR_SIZE_PCT 70  /* size of moving sprites vs their old chase-distance size */
 #define ACTOR_SCALE(s) ((((((1 << 20) / CAM_DIST) * FOCAL) >> 12) * ACTOR_SIZE_PCT) / 100)
 #endif
-/* trees, cacti, Joshua trees and bushes: size vs the original art scale */
-#define FLORA_SIZE_PCT  60
+/* palms and hibiscus: size vs their art scale */
+#define FLORA_SIZE_PCT  100
 #define FREE_ROAM 1
 
 /* ---- projection (must match tools/common.py) ---- */
@@ -27,6 +27,7 @@
 #define CAM_DIST  40              /* camera distance behind the player */
 #define NEAR_Z    (6 << 8)        /* near plane, Q8 world units */
 #define FAR_Z     (760 << 8)      /* objects beyond this are not drawn */
+#define BLD_FAR_Z (560 << 8)      /* buildings beyond this are left to the haze */
 #define SCREEN_W  240
 #define SCREEN_H  160
 
@@ -51,9 +52,8 @@ INLINE u32 timer_cycles(void) {
 
 /* ---- OBJ VRAM layout (tile = 32 bytes) ---- */
 #define TILE_PLAYER     0      /* 64x64 (64 tiles) */
-#define TILE_NPC        64     /* 4 x 32x64 (32 tiles each) */
-#define MAX_NPC         4
-#define TILE_HORSE      192    /* 64x64 horse (with or without rider) */
+#define TILE_NPC        64     /* 6 x 32x64 (32 tiles each) */
+#define MAX_NPC         6
 #define TILE_BILLS      256    /* static billboard art */
 #define TILE_FX         528
 #define TILE_BSLOT      576    /* building canvases (tile pool) */
@@ -64,7 +64,6 @@ INLINE u32 timer_cycles(void) {
 #define PAL_OUTLAW 1
 #define PAL_FX     4
 #define PAL_TOWN   5
-#define PAL_HORSE  6
 
 /* ---- camera ---- */
 typedef struct {
@@ -103,7 +102,11 @@ typedef struct {
     int ow, oh;        /* size of each OBJ in pixels */
     s32 ax, ay;        /* screen position of the anchor corner */
     int aidx;          /* anchor: wall whose start corner is farthest from the camera */
+    s32 bx1, by1;      /* screen bbox: (sx0, sy0) .. (bx1, by1) */
 } Canvas;
+IWRAM_CODE void occ_reset(void);
+IWRAM_CODE int occ_hidden(const Canvas *cv);
+IWRAM_CODE void occ_add(void);
 
 IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_tiles);  /* returns tiles needed, 0 = not visible */
 IWRAM_CODE void bld_draw(u8 *staging);
@@ -137,14 +140,7 @@ typedef struct {
 
 extern Player player;
 
-typedef struct {
-    s32 x, y;          /* Q8 */
-    u16 heading, anim;
-    u8 gait;           /* 0 idle, 1 walk, 2 gallop */
-    u8 ridden;
-} Horse;
-extern Horse horse;
-extern int horse_hint;  /* 0 none, 1 "mount", 2 riding */
+
 extern Npc npcs[MAX_NPC];
 extern u32 game_frame;
 

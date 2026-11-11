@@ -31,7 +31,7 @@ void world_init(void) {
     for (int i = 0; i < N_BILL_DEFS; i++) {
         bill_tile[i] = t;
         bill_kinv[i] = (16 << 12) / bill_defs[i].k16;
-        if (i <= BILL_BUSH) bill_kinv[i] = bill_kinv[i] * FLORA_SIZE_PCT / 100;   /* flora */
+        if (i <= BILL_HIBISCUS) bill_kinv[i] = bill_kinv[i] * FLORA_SIZE_PCT / 100;   /* flora */
         dma_copy32((u8 *)OBJ_VRAM + t * 32, bill_defs[i].tiles, bill_defs[i].bytes);
         t += bill_defs[i].bytes / 32;
     }
@@ -115,7 +115,7 @@ IWRAM_CODE void draw_buildings(void) {
         if (dx > (800 << 8) || dx < -(800 << 8) || dy > (800 << 8) || dy < -(800 << 8)) continue;
         s32 X, Z;
         cam_xform(b->x << 8, b->y << 8, &X, &Z);
-        if (Z < -(80 << 8) || Z > FAR_Z + (60 << 8)) continue;
+        if (Z < -(80 << 8) || Z > BLD_FAR_Z) continue;
         ord[n].z = Z; ord[n].i = i; n++;
     }
     for (int i = 1; i < n; i++) {           /* nearest first gets canvas slots first */
@@ -132,12 +132,15 @@ IWRAM_CODE void draw_buildings(void) {
         {0xFF, 0xFF, 0xFF, 0xFF},
         {0xFF, 0x07, 0xFF, 0x03}};           /* 64x32 wide/3, 64x64 sq/3 */
     int used_total = 0;
+    occ_reset();
     for (int k = 0; k < n && used_total < BLD_TILES; k++) {
         Canvas cv;
         int used = bld_prepare(ord[k].i, &cv, BLD_TILES - used_total);
         if (!used) continue;
+        if (occ_hidden(&cv)) continue;           /* entirely behind nearer buildings */
         int t0 = used_total;
         bld_draw(bslot_stage + t0 * 32);
+        occ_add();                              /* now it hides what is behind it */
         u8 sc = shape_of[cv.ow / 16 - 1][cv.oh / 16 - 1];
         int shape = sc >> 2, size = sc & 3, per = (cv.ow / 8) * (cv.oh / 8);
         s32 depth = ord[k].z;
@@ -156,6 +159,9 @@ IWRAM_CODE void draw_buildings(void) {
         used_total += used;
     }
     bslots_used = used_total;                /* tiles used this frame */
+#ifdef BLD_DEBUG
+    { extern int dbg_nb, dbg_nv; dbg_nb = n; dbg_nv = used_total; }
+#endif
 }
 
 /* ------------------------------------------------------------- effects */
@@ -192,6 +198,12 @@ void draw_fx(void) {
 IWRAM_CODE int blocked(s32 x, s32 y, s32 r) {
     s32 ux = x >> 8, uy = y >> 8;
     if (ux < 16 || uy < 16 || ux > 1008 || uy > 1008) return 1;
+    /* the sea, the bay and the seawalls (1 bit per 8x8 ground tile) */
+    for (int k = 0; k < 4; k++) {
+        s32 qx = ux + ((k & 1) ? r : -r), qy = uy + ((k & 2) ? r : -r);
+        u32 t = ((qy >> 3) & 127) * 128 + ((qx >> 3) & 127);
+        if (water_bits[t >> 3] & (1 << (t & 7))) return 1;
+    }
     for (int i = 0; i < N_BUILDINGS; i++) {
         const BuildingDef *b = &town_buildings[i];
         if (ux > b->bx0 - r && ux < b->bx1 + r && uy > b->by0 - r && uy < b->by1 + r) return 1;

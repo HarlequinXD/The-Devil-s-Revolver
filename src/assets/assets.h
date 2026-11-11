@@ -19,36 +19,35 @@ typedef struct { const u8 *tiles; u16 bytes; u8 w, h, shape, size, pal, k16, rad
 typedef struct { s16 x, y; u8 type, pad; } BillPlace;
 
 #define WALL_DOUBLE 1
+#define WALL_CUTTOP 2   /* top of the wall has see-through cut-outs */
 
-#define N_GROUND_TILES 118
-#define N_SKY_TILES 97
+#define N_GROUND_TILES 105
+#define N_SKY_TILES 114
 #define N_FONT_TILES 96
-#define N_TOWN_TEX 20
-#define N_MESHES 11
-#define N_BUILDINGS 17
+#define N_TOWN_TEX 25
+#define N_MESHES 12
+#define N_BUILDINGS 42
 #define N_BILL_DEFS 10
-#define N_WORLD_BILLS 237
+#define N_WORLD_BILLS 242
 #define N_NPC_SPAWNS 8
 #define N_SCALE_LEVELS 31
 #define CHAR_FRAMES 8
 #define COWBOY_FRAMES 16
-#define HORSE_FRAMES 26
-#define HORSE_K16 37
 #define GEN_HORIZON 52
 #define GEN_FOCAL 160
 #define GEN_CAM_H 24
 #define FONT_CHARS " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$:!.,'-/?*"
 
-#define BILL_SAGUARO 0
-#define BILL_JOSHUA 1
-#define BILL_DEADTREE 2
-#define BILL_BUSH 3
-#define BILL_ROCK 4
-#define BILL_ROCK2 5
-#define BILL_BARREL 6
-#define BILL_SKULL 7
-#define BILL_TUMBLE0 8
-#define BILL_TUMBLE1 9
+#define BILL_PALM 0
+#define BILL_ROYAL 1
+#define BILL_FANPALM 2
+#define BILL_HIBISCUS 3
+#define BILL_LAMP 4
+#define BILL_UMBRELLA 5
+#define BILL_BIN 6
+#define BILL_HYDRANT 7
+#define BILL_GULL0 8
+#define BILL_GULL1 9
 
 extern const s16 lut_sin[512];
 extern const u32 lut_recip[4096];
@@ -56,51 +55,56 @@ extern const u16 scale_level_pa[31];
 extern const u8 scale_to_level[1024];
 extern const u16 lut_atan[257];
 extern const u16 scale_level_q8[31];
-extern const u8 ground_tiles[7552];
+extern const u8 ground_tiles[6720];
 extern const u8 ground_map[16384];
-extern const u8 sky_tiles[3104];
+extern const u8 water_bits[2048];
+extern const u8 sky_tiles[3648];
 extern const u16 sky_map[2048];
 extern const u8 font_tiles[3072];
 extern const u16 bg_palette[256];
-extern const u8 tex_siding[1024];
-extern const u8 tex_weathered[1024];
-extern const u8 tex_boards[1024];
-extern const u8 tex_side_window[1024];
-extern const u8 tex_whitewash[1024];
-extern const u8 tex_adobe[1024];
-extern const u8 tex_brick[1024];
-extern const u8 tex_shingle[1024];
-extern const u8 tex_tin[1024];
-extern const u8 tex_tank[1024];
-extern const u8 tex_fac_saloon[4096];
-extern const u8 tex_fac_store[4096];
-extern const u8 tex_fac_bank[4096];
-extern const u8 tex_fac_sheriff[4096];
-extern const u8 tex_fac_hotel[4096];
-extern const u8 tex_fac_house[4096];
-extern const u8 tex_fac_shack[4096];
-extern const u8 tex_fac_church[4096];
-extern const u8 tex_fac_depot[4096];
-extern const u8 tex_fac_barber[4096];
-extern const TexDef town_tex[20];
+extern const u8 tex_st_white[1024];
+extern const u8 tex_sw_white[1024];
+extern const u8 tex_st_pink[1024];
+extern const u8 tex_sw_pink[1024];
+extern const u8 tex_st_mint[1024];
+extern const u8 tex_sw_mint[1024];
+extern const u8 tex_st_yellow[1024];
+extern const u8 tex_sw_yellow[1024];
+extern const u8 tex_st_lav[1024];
+extern const u8 tex_sw_lav[1024];
+extern const u8 tex_fin_pink[1024];
+extern const u8 tex_fin_cyan[1024];
+extern const u8 tex_condo[1024];
+extern const u8 tex_hut[1024];
+extern const u8 tex_post[1024];
+extern const u8 tex_fac_palms[4096];
+extern const u8 tex_fac_coral[4096];
+extern const u8 tex_fac_breeze[4096];
+extern const u8 tex_fac_tropic[4096];
+extern const u8 tex_fac_neptune[4096];
+extern const u8 tex_fac_surf[4096];
+extern const u8 tex_fac_cafe[4096];
+extern const u8 tex_fac_dunes[4096];
+extern const u8 tex_fac_regal[4096];
+extern const u8 tex_fac_aqua[4096];
+extern const TexDef town_tex[25];
 extern const u8 town_shade[48];
-extern const Mesh town_mesh[11];
-extern const BuildingDef town_buildings[17];
+extern const Mesh town_mesh[12];
+extern const BuildingDef town_buildings[42];
 extern const u8 spr_cowboy[262144];
 extern const u8 spr_outlaw[65536];
 extern const s8 gun_tips[32];
-extern const u8 spr_horse[425984];
 extern const u8 spr_outlaw_dead[1024];
-extern const u8 bill_saguaro[1024];
-extern const u8 bill_joshua[2048];
-extern const u8 bill_deadtree[2048];
-extern const u8 bill_bush[512];
-extern const u8 bill_rock[512];
-extern const u8 bill_rock2[512];
-extern const u8 bill_barrel[512];
-extern const u8 bill_skull[512];
-extern const u8 bill_tumble0[512];
-extern const u8 bill_tumble1[512];
+extern const u8 bill_palm[2048];
+extern const u8 bill_royal[2048];
+extern const u8 bill_fanpalm[1024];
+extern const u8 bill_hibiscus[512];
+extern const u8 bill_lamp[1024];
+extern const u8 bill_umbrella[512];
+extern const u8 bill_bin[512];
+extern const u8 bill_hydrant[512];
+extern const u8 bill_gull0[512];
+extern const u8 bill_gull1[512];
 extern const BillDef bill_defs[10];
 extern const u8 fx_flash[128];
 extern const u8 fx_dust[384];
@@ -108,7 +112,7 @@ extern const u8 fx_shadow[256];
 extern const u8 fx_spark[128];
 extern const u16 obj_palette[256];
 extern const u16 bill_cell_start[65];
-extern const BillPlace world_bills[237];
+extern const BillPlace world_bills[242];
 extern const s16 npc_spawns[8][2];
 
 #endif

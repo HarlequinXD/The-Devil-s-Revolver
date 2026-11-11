@@ -1,14 +1,15 @@
-"""Town: building textures (palette-indexed), low-poly meshes and world layout."""
+"""Miami Beach, 1986: art-deco building textures (palette-indexed), low-poly meshes and the city layout."""
 import random
 import math
 from common import FONT5x7, hexrgb
 
 # OBJ palette bank used by every building (15 colours + transparent)
-TOWN_PAL = ['#000000', '#1a1210', '#3b2618', '#5e3d22', '#85593a', '#a87a4f', '#c9a06b',
-            '#6f655a', '#a39684', '#ddd0b0', '#b98a5e', '#7e3424', '#b4523a', '#2a3138',
-            '#6f8c9c', '#efe5c8']
+TOWN_PAL = ['#000000', '#1a1426', '#3c3f66', '#5f86b4', '#a9dcef', '#f6f2e8', '#d6cdc2', '#f7b5c9',
+            '#d688a3', '#a7e8cf', '#73bba1', '#fde59a', '#d2ae62', '#ff3fa8', '#40f0ff', '#b9a6e6']
+#           0 clear    1 ink      2 navy     3 glass    4 glass hi 5 white    6 white sh 7 pink
+#           8 pink sh  9 mint     10 mint sh 11 yellow  12 yell sh 13 neon pk 14 neon cy 15 lavender
 # shading ramp: colour -> one step darker (used for faces turned from the sun)
-DARKER = [0, 1, 1, 2, 3, 4, 5, 2, 7, 10, 4, 2, 11, 1, 13, 9]
+DARKER = [0, 1, 1, 2, 3, 6, 15, 8, 2, 10, 2, 12, 8, 8, 3, 2]
 
 
 def shade_luts():
@@ -121,9 +122,13 @@ def sign(t, s, x, y, w, h, board=15, ink=11, edge=1):
     text(t, s, x + w // 2, y + (h - 7) // 2, ink)
 
 
+
 # ------------------------------------------------------------------ textures
 TEXTURES = []      # list of (name, Tex)
 TEX_ID = {}
+
+# stucco colours: (base, shade)
+COLOURS = {'white': (5, 6), 'pink': (7, 8), 'mint': (9, 10), 'yellow': (11, 12), 'lav': (15, 6)}
 
 
 def add_tex(name, t):
@@ -131,154 +136,125 @@ def add_tex(name, t):
     TEXTURES.append((name, t))
 
 
+def stucco(t, base, shade, rnd, x0=0, y0=0, w=None, h=None):
+    w = w or t.w; h = h or t.h
+    for y in range(y0, y0 + h):
+        for x in range(x0, x0 + w):
+            t.set(x, y, shade if rnd.random() < 0.07 else base)
+
+
+def deco_window(t, x, y, w, h, base, shade):
+    """window with a white frame, glass with a glint, and a shading 'eyebrow' ledge"""
+    t.rect(x - 2, y - 3, w + 4, 1, 5)          # eyebrow ledge
+    t.rect(x - 2, y - 2, w + 4, 1, shade)      # its shadow
+    t.rect(x - 1, y - 1, w + 2, h + 2, 5)
+    t.rect(x, y, w, h, 3)
+    t.rect(x, y, w, 1, 2)
+    for i in range(min(w, h) - 1):
+        t.set(x + 1 + i, y + h - 2 - i, 4)
+    t.rect(x + w // 2, y, 1, h, 5)
+
+
 def build_textures():
-    r = random.Random(7)
-    t = Tex(32, 32); planks_h(t, 0, 0, 32, 32, r); add_tex('siding', t)
-    t = Tex(32, 32); planks_h(t, 0, 0, 32, 32, r, ramp=(7, 8, 8), gap=7 if False else 2); add_tex('weathered', t)
-    t = Tex(32, 32); planks_v(t, 0, 0, 32, 32, r); add_tex('boards', t)
-    t = Tex(32, 32); planks_h(t, 0, 0, 32, 32, r)
-    window(t, 10, 8, 12, 14); add_tex('side_window', t)
-    t = Tex(32, 32); planks_h(t, 0, 0, 32, 32, r, ramp=(9, 9, 15), gap=8, nails=False); add_tex('whitewash', t)
-    # adobe stucco
+    r = random.Random(1986)
+    for cname, (b, s) in COLOURS.items():
+        t = Tex(32, 32); stucco(t, b, s, r); add_tex('st_' + cname, t)
+        t = Tex(32, 32); stucco(t, b, s, r)
+        deco_window(t, 9, 9, 14, 13, b, s)
+        t.rect(0, 30, 32, 1, s)                 # floor line
+        add_tex('sw_' + cname, t)
+    # vertical fins with a neon tube up the middle (8 texels wide, repeats)
+    for nm, neon in (('fin_pink', 13), ('fin_cyan', 14)):
+        t = Tex(32, 32); stucco(t, 5, 6, r)
+        for x in range(0, 32, 8):
+            t.rect(x + 3, 0, 2, 32, neon); t.rect(x + 2, 0, 1, 32, 6); t.rect(x + 5, 0, 1, 32, 6)
+        add_tex(nm, t)
+    # condo tower: glass bands and white balconies
     t = Tex(32, 32)
     for y in range(32):
         for x in range(32):
-            v = r.random()
-            t.set(x, y, 10 if v < 0.72 else (9 if v < 0.9 else 4))
-    for _ in range(4):
-        x, y = r.randrange(32), r.randrange(32)
-        for i in range(r.randrange(4, 9)):
-            t.set(x, y, 4); x += r.choice((-1, 0, 1)); y += 1
-    add_tex('adobe', t)
-    # brick
-    t = Tex(32, 32, 1)
-    for row in range(8):
-        off = 4 if row % 2 else 0
-        for bx in range(-1, 5):
-            c = r.choice((11, 12, 12, 11, 10))
-            t.rect(bx * 8 + off + 1, row * 4 + 1, 7, 3, c)
-    add_tex('brick', t)
-    # shingles
-    t = Tex(32, 32, 1)
-    for row in range(8):
-        off = (row % 2) * 3
-        for bx in range(-1, 7):
-            c = r.choice((2, 3, 3, 7))
-            t.rect(bx * 6 + off, row * 4, 5, 3, c)
-            t.set(bx * 6 + off, row * 4 + 2, 1)
-    add_tex('shingle', t)
-    # corrugated tin
+            t.set(x, y, 3 if (x + y) % 11 else 4)
+    for y in (0, 16):
+        t.rect(0, y, 32, 3, 5); t.rect(0, y + 3, 32, 1, 6)
+        for x in range(0, 32, 4):
+            t.set(x, y + 1, 6)
+    t.rect(15, 0, 2, 32, 6)
+    add_tex('condo', t)
+    # lifeguard hut stripes
     t = Tex(32, 32)
-    for y in range(32):
-        for x in range(32):
-            c = (8, 8, 7, 7)[x % 4]
-            if r.random() < 0.06:
-                c = 10  # rust spots
-            t.set(x, y, c)
-    add_tex('tin', t)
-    # water tank staves with iron hoops
-    t = Tex(32, 32)
-    planks_v(t, 0, 0, 32, 32, r, ramp=(3, 4, 4), gap=2, pw=4)
-    for y in (4, 15, 27):
-        t.rect(0, y, 32, 2, 1)
-        t.rect(0, y, 32, 1, 7)
-    add_tex('tank', t)
+    bands = (7, 11, 9, 14, 15, 13, 5, 7)
+    for x in range(32):
+        for y in range(32):
+            t.set(x, y, bands[(x // 4) % 8])
+    t.rect(0, 0, 32, 2, 5); t.rect(0, 30, 32, 2, 6)
+    t.rect(10, 9, 12, 9, 1); t.rect(11, 10, 10, 7, 3)
+    add_tex('hut', t)
+    t = Tex(32, 32); stucco(t, 5, 6, r); add_tex('post', t)
 
     # ---- facades (64x64, stretched over a whole front wall)
-    def facade_base(ramp=(3, 4, 5)):
+    def facade(name, colour, neon, sign_text, floors=3, style='windows'):
+        b, s = COLOURS[colour]
         f = Tex(64, 64)
-        planks_h(f, 0, 0, 64, 64, r, ramp=ramp)
-        return f
-
-    f = facade_base()
-    f.rect(0, 0, 64, 3, 2); f.rect(0, 20, 64, 2, 2)         # trim
-    sign(f, 'SALOON', 6, 5, 52, 13, board=15, ink=12)
-    window(f, 5, 31, 13, 15); window(f, 46, 31, 13, 15)
-    f.rect(23, 29, 18, 35, 1); f.rect(24, 30, 16, 34, 13)  # dark doorway
-    for dx in (24, 32):                                      # batwing doors
-        planks_v(f, dx, 38, 8, 14, r, ramp=(5, 6, 6), gap=4, pw=2)
-        f.rect(dx, 38, 8, 1, 2)
-    add_tex('fac_saloon', f)
-
-    f = facade_base((4, 5, 6))
-    f.rect(0, 0, 64, 2, 2)
-    sign(f, 'STORE', 8, 5, 48, 12, board=2, ink=15, edge=1)
-    window(f, 3, 26, 21, 24, frame=5); window(f, 40, 26, 21, 24, frame=5)
-    door(f, 27, 30, 10, 34, r)
-    add_tex('fac_store', f)
-
-    f = Tex(64, 64)
-    bt = TEXTURES[TEX_ID['brick']][1]
-    for y in range(64):
+        stucco(f, b, s, r)
+        # stepped "ziggurat" parapet: cut the skyline out of the top rows
+        for y in range(10):
+            half = 12 + (y // 3) * 7 if y < 9 else 40
+            for x in range(64):
+                if abs(x - 31.5) > half:
+                    f.set(x, y, 0)
+        for y in range(10):                    # trim along the steps
+            half = 12 + (y // 3) * 7
+            if y % 3 == 0 and y < 9:
+                for x in range(64):
+                    if abs(x - 31.5) <= half and f.p[y][x]:
+                        f.set(x, y, 5)
+        f.rect(0, 10, 64, 1, neon)              # neon cornice
+        f.rect(6, 12, 52, 10, 1)                # sign board
+        text(f, sign_text, 32, 13, neon)
+        top, bot = 25, 50
+        fh = (bot - top) // floors
+        for k in range(floors):
+            wy = top + k * fh + 3
+            if style == 'windows':
+                for wx in (5, 25, 45):
+                    deco_window(f, wx, wy, 14, fh - 5, b, s)
+            elif style == 'porthole':
+                for wx in (10, 54):
+                    deco_window(f, wx - 6, wy, 12, fh - 5, b, s)
+                for a in range(0, 360, 8):
+                    f.set(32 + int(4.5 * math.cos(math.radians(a))), wy + (fh - 5) // 2 + int(4.5 * math.sin(math.radians(a))), 5)
+                f.rect(29, wy + (fh - 5) // 2 - 2, 7, 5, 3)
+            else:  # glass-block centre strip
+                for wx in (5, 45):
+                    deco_window(f, wx, wy, 14, fh - 5, b, s)
+                for yy in range(wy - 2, wy + fh - 2):
+                    for xx in range(24, 40):
+                        f.set(xx, yy, 4 if (xx // 3 + yy // 3) % 2 else 3)
+            f.rect(0, top + (k + 1) * fh - 1, 64, 1, s)
+        # ground floor: striped awning over a glass shopfront
         for x in range(64):
-            f.set(x, y, bt.p[y % 32][x % 32])
-    f.rect(0, 0, 64, 4, 9); f.rect(0, 4, 64, 1, 1)
-    sign(f, 'BANK', 14, 7, 36, 13, board=9, ink=11)
-    for wx in (6, 46):
-        window(f, wx, 30, 12, 18, frame=9)
-        f.rect(wx, 27, 12, 3, 9)
-    f.rect(23, 26, 18, 38, 9)
-    door(f, 26, 30, 12, 34, r, ramp=(2, 2, 3))
-    add_tex('fac_bank', f)
+            f.set(x, 50, 1)
+            for y in range(51, 54):
+                f.set(x, y, neon if (x // 4) % 2 else 5)
+        f.rect(0, 54, 64, 1, 1)
+        f.rect(2, 55, 60, 9, 3)
+        for x in range(4, 62, 9):
+            f.rect(x, 55, 1, 9, 5)
+        f.rect(27, 55, 10, 9, 1); f.rect(28, 56, 8, 8, 2)
+        for i in range(5):
+            f.set(5 + i, 62 - i, 4); f.set(44 + i, 62 - i, 4)
+        add_tex(name, f)
 
-    f = facade_base((7, 8, 8))
-    f.rect(0, 0, 64, 2, 1)
-    sign(f, 'SHERIFF', 8, 5, 48, 12, board=2, ink=15)
-    window(f, 6, 28, 14, 16)
-    for bx in range(8, 20, 3):
-        f.rect(bx, 28, 1, 16, 1)
-    f.rect(40, 30, 1, 1, 1)
-    door(f, 34, 28, 14, 36, r)
-    # star badge
-    for (x, y) in ((27, 30), (26, 31), (27, 31), (28, 31), (25, 32), (26, 32), (27, 32), (28, 32), (29, 32),
-                   (26, 33), (27, 33), (28, 33), (26, 34), (28, 34)):
-        f.set(x, y, 6)
-    add_tex('fac_sheriff', f)
-
-    f = facade_base((10, 10, 9))
-    f.rect(0, 0, 64, 2, 2)
-    sign(f, 'HOTEL', 10, 4, 44, 11, board=15, ink=2)
-    for wx in (5, 26, 47):
-        window(f, wx, 19, 11, 12)
-    f.rect(0, 35, 64, 2, 4)
-    window(f, 5, 41, 12, 13); window(f, 47, 41, 12, 13)
-    door(f, 26, 40, 12, 24, r)
-    add_tex('fac_hotel', f)
-
-    f = facade_base()
-    window(f, 8, 22, 14, 16)
-    door(f, 38, 24, 12, 40, r)
-    add_tex('fac_house', f)
-
-    f = facade_base((7, 8, 8))
-    window(f, 40, 24, 14, 14, frame=8)
-    door(f, 10, 26, 12, 38, r, ramp=(7, 8, 8))
-    add_tex('fac_shack', f)
-
-    f = Tex(64, 64)
-    planks_h(f, 0, 0, 64, 64, r, ramp=(9, 9, 15), gap=8, nails=False)
-    f.rect(20, 26, 24, 38, 1)
-    door(f, 21, 27, 11, 37, r, ramp=(2, 3, 3)); door(f, 32, 27, 11, 37, r, ramp=(2, 3, 3))
-    for a in range(0, 360, 6):   # round window
-        x = 32 + int(7 * math.cos(math.radians(a))); y = 12 + int(7 * math.sin(math.radians(a)))
-        f.set(x, y, 1)
-    f.rect(27, 8, 11, 9, 13); f.rect(32, 6, 1, 13, 6); f.rect(26, 12, 13, 1, 6)
-    add_tex('fac_church', f)
-
-    f = facade_base((11, 12, 12))
-    f.rect(0, 0, 64, 3, 9)
-    sign(f, 'DEPOT', 12, 5, 40, 12, board=9, ink=11)
-    window(f, 5, 26, 12, 16, frame=9); window(f, 47, 26, 12, 16, frame=9)
-    door(f, 25, 26, 14, 38, r)
-    add_tex('fac_depot', f)
-
-    f = facade_base((4, 5, 5))
-    sign(f, 'BARBER', 7, 5, 50, 12, board=15, ink=12)
-    window(f, 6, 26, 18, 20)
-    door(f, 36, 26, 12, 38, r)
-    for y in range(26, 50):  # striped pole
-        f.set(56, y, 12 if (y // 3) % 2 else 15); f.set(57, y, 12 if (y // 3) % 2 else 15)
-    add_tex('fac_barber', f)
+    facade('fac_palms', 'pink', 14, 'PALMS')
+    facade('fac_coral', 'mint', 13, 'CORAL', style='porthole')
+    facade('fac_breeze', 'yellow', 13, 'SEABREEZE', style='glass')
+    facade('fac_tropic', 'lav', 14, 'TROPICS')
+    facade('fac_neptune', 'white', 14, 'NEPTUNE', style='glass')
+    facade('fac_surf', 'pink', 14, 'SURF', floors=2, style='porthole')
+    facade('fac_cafe', 'mint', 13, 'CAFE', floors=2)
+    facade('fac_dunes', 'white', 13, 'DUNES', style='windows')
+    facade('fac_regal', 'yellow', 14, 'REGAL', floors=2, style='glass')
+    facade('fac_aqua', 'lav', 13, 'AQUA', floors=2, style='porthole')
 
 
 # ------------------------------------------------------------------ meshes
@@ -305,15 +281,15 @@ class Mesh:
     def poly(self, verts, uvs, tex, flags=0):
         self.polys.append((verts, [(int(u * Q), int(v * Q)) for u, v in uvs], TEX_ID[tex], flags))
 
-    def box(self, w, d, hw, front_tex, side='siding', back=None, front_h=None, stretch_front=True):
+    def box(self, w, d, hw, front_tex, side='siding', back=None, front_h=None, stretch_front=True, parapet=None):
         x0, x1, z0, z1 = -w / 2, w / 2, -d / 2, d / 2
         fh = front_h or hw
-        self.wall(x0, z1, x1, z1, 0, fh, front_tex, stretch=stretch_front)
+        self.wall(x0, z1, x1, z1, 0, fh, front_tex, stretch=stretch_front, flags=2 if fh > hw else 0)
         self.wall(x1, z1, x1, z0, 0, hw, side)
         self.wall(x1, z0, x0, z0, 0, hw, back or side)
         self.wall(x0, z0, x0, z1, 0, hw, side)
         if fh > hw:  # back of the false front, seen from behind
-            self.wall(x1, z1 - 1, x0, z1 - 1, hw, fh, 'boards')
+            self.wall(x1, z1 - 1, x0, z1 - 1, hw, fh, parapet or side)
 
     def porch(self, w, d, h_wall=22, h_front=17, depth=13):
         zf = d / 2 + depth
@@ -358,6 +334,8 @@ class Mesh:
         return self
 
 
+
+
 MESHES = []
 MESH_ID = {}
 
@@ -367,55 +345,63 @@ def add_mesh(m):
     MESHES.append(m.finish())
 
 
+def deco(name, w, d, h, fac, colour, fin=None, parapet=8):
+    m = Mesh(name)
+    m.box(w, d, h, fac, side='sw_' + colour, front_h=h + parapet, parapet='st_' + colour)
+    if fin:
+        zf, zb = d / 2 + 3, d / 2
+        top = h + parapet + 10
+        m.wall(-4, zf, 4, zf, int(h * 0.3), top, fin)
+        m.wall(4, zf, 4, zb, int(h * 0.3), top, fin)
+        m.wall(-4, zb, -4, zf, int(h * 0.3), top, fin)
+        m.wall(4, zb, -4, zb, h + parapet, top, fin)
+    add_mesh(m)
+
+
 def build_meshes():
-    m = Mesh('saloon'); m.box(56, 60, 30, 'fac_saloon', side='side_window', front_h=44); m.porch(56, 60); add_mesh(m)
-    m = Mesh('store'); m.box(48, 56, 26, 'fac_store', side='siding', front_h=38); m.porch(48, 56, 20, 16); add_mesh(m)
-    m = Mesh('bank'); m.box(44, 52, 32, 'fac_bank', side='brick', front_h=36); add_mesh(m)
-    m = Mesh('sheriff'); m.box(40, 48, 26, 'fac_sheriff', side='weathered', front_h=34); add_mesh(m)
-    m = Mesh('hotel'); m.box(56, 56, 40, 'fac_hotel', side='side_window', front_h=48); m.porch(56, 56, 22, 17); add_mesh(m)
-    m = Mesh('barber'); m.box(40, 44, 26, 'fac_barber', side='siding', front_h=34); add_mesh(m)
-    m = Mesh('house'); m.box(40, 40, 24, 'fac_house', side='side_window'); m.gable_x(40, 40, 24, 38); add_mesh(m)
-    m = Mesh('shack'); m.box(34, 34, 22, 'fac_shack', side='weathered'); m.gable_x(34, 34, 22, 33, roof='tin', gable='weathered'); add_mesh(m)
-    m = Mesh('church'); m.box(40, 64, 28, 'fac_church', side='whitewash')
-    m.gable_z(40, 64, 28, 46, gable='whitewash')
-    # steeple: a box on the front with a pyramid cap
-    s = 7; zc = 32 - s
-    m.wall(-s, zc + s, s, zc + s, 46, 64, 'whitewash'); m.wall(s, zc + s, s, zc - s, 46, 64, 'whitewash')
-    m.wall(s, zc - s, -s, zc - s, 46, 64, 'whitewash'); m.wall(-s, zc - s, -s, zc + s, 46, 64, 'whitewash')
-    ap = (0, 82, zc)
-    corners = [(-s - 1, zc + s + 1), (s + 1, zc + s + 1), (s + 1, zc - s - 1), (-s - 1, zc - s - 1)]
-    for i in range(4):
-        a, b = corners[i], corners[(i + 1) % 4]
-        m.poly([(a[0], 64, a[1]), ap, (b[0], 64, b[1])], [(0, 20), (8, 0), (16, 20)], 'shingle')
-    add_mesh(m)
-    m = Mesh('depot'); m.box(72, 36, 26, 'fac_depot', side='siding'); m.gable_x(72, 36, 26, 38, roof='shingle')
-    m.porch(72, 36, 22, 17, 12); add_mesh(m)
-    # water tower
-    m = Mesh('watertower')
-    for (lx, lz) in ((-11, -11), (11, -11), (11, 11), (-11, 11)):
-        m.wall(lx - 1.5, lz, lx + 1.5, lz, 0, 36, 'boards', flags=1)
-        m.wall(lx, lz - 1.5, lx, lz + 1.5, 0, 36, 'boards', flags=1)
-    R = 15; n = 8
-    pts = [(R * math.sin(2 * math.pi * (i - 0.5) / n), R * math.cos(2 * math.pi * (i - 0.5) / n)) for i in range(n)]
-    for i in range(n):
-        a, b = pts[i], pts[(i + 1) % n]
-        m.wall(a[0], a[1], b[0], b[1], 36, 58, 'tank', dens=1.4)
-    ap = (0, 72, 0)
-    for i in range(n):
-        a, b = pts[i], pts[(i + 1) % n]
-        m.poly([(a[0] * 1.15, 58, a[1] * 1.15), ap, (b[0] * 1.15, 58, b[1] * 1.15)], [(0, 18), (6, 0), (12, 18)], 'shingle')
+    # name, width, depth, height, facade, side colour, fin
+    deco('palms', 56, 44, 44, 'fac_palms', 'pink', 'fin_cyan')
+    deco('coral', 48, 40, 44, 'fac_coral', 'mint')
+    deco('breeze', 60, 44, 50, 'fac_breeze', 'yellow', 'fin_pink')
+    deco('tropic', 52, 40, 44, 'fac_tropic', 'lav', 'fin_cyan')
+    deco('neptune', 56, 44, 50, 'fac_neptune', 'white', 'fin_pink')
+    deco('surf', 44, 36, 32, 'fac_surf', 'pink')
+    deco('cafe', 40, 36, 30, 'fac_cafe', 'mint')
+    deco('dunes', 52, 40, 44, 'fac_dunes', 'white', 'fin_cyan')
+    deco('regal', 44, 36, 32, 'fac_regal', 'yellow')
+    deco('aqua', 44, 36, 32, 'fac_aqua', 'lav', 'fin_pink')
+    m = Mesh('condo'); m.box(44, 44, 96, 'condo', side='condo', stretch_front=False); add_mesh(m)
+    # lifeguard hut on stilts
+    m = Mesh('lifeguard')
+    for (lx, lz) in ((-6, -5), (6, -5), (6, 5), (-6, 5)):
+        m.wall(lx - 1, lz, lx + 1, lz, 0, 12, 'post', flags=1)
+        m.wall(lx, lz - 1, lx, lz + 1, 0, 12, 'post', flags=1)
+    w, d = 16, 12
+    x0, x1, z0, z1 = -w / 2, w / 2, -d / 2, d / 2
+    m.wall(x0, z1, x1, z1, 12, 24, 'hut', stretch=True)
+    m.wall(x1, z1, x1, z0, 12, 24, 'hut')
+    m.wall(x1, z0, x0, z0, 12, 24, 'hut')
+    m.wall(x0, z0, x0, z1, 12, 24, 'hut')
+    m.gable_x(w, d, 24, 30, roof='st_pink', gable='st_pink', o=2)
     add_mesh(m)
 
 
-# ------------------------------------------------------------------ layout
-STREET_X0, STREET_X1 = 480, 544      # main street
-STREET_Y0, STREET_Y1 = 190, 1024
-CROSS_Y0, CROSS_Y1 = 488, 536        # cross street
-CROSS_X0, CROSS_X1 = 250, 800
-RAIL_Y = 848                         # rail line centre
-WEST_FRONT, EAST_FRONT = 464, 560    # building fronts (boardwalks between)
+# ------------------------------------------------------------------ layout (all in 8-unit ground tiles)
+# columns, west to east: bay | seawall | West Ave | block A | Washington | block B | Collins
+#                        | block C (hotels) | Ocean Drive | palm park | beach | surf | ocean
+ROAD_W = 5
+AVENUES = [9, 28, 47, 69]            # first tile column of each N-S avenue
+STREETS = [8, 38, 68, 98]            # first tile row of each E-W street
+LAND_X0, LAND_X1 = 6, 98             # land columns (inclusive)
+LAND_Y0, LAND_Y1 = 5, 105            # land rows (inclusive)
+CITY_X1 = 75                         # last city column (Ocean Drive's east sidewalk)
+PARK_X0, PARK_X1 = 76, 83
+BEACH_X0, WET_X0 = 84, 97
+BOARDWALK_ROWS = (24, 54, 84)   # wooden paths across the park and sand
+BLOCKS_X = [(16, 25), (35, 44), (54, 66)]
+BLOCKS_Y = [(15, 35), (45, 65), (75, 95)]
 
-BUILDINGS = []   # (mesh, x, y, rot)
+BUILDINGS = []   # (mesh, x, y, rot)  rot 1 faces west (-x), rot 3 faces east (+x)
 
 
 def local_to_world(b, lx, lz):
@@ -439,30 +425,53 @@ def footprint(b):
     return int(min(xs)), int(min(ys)), int(max(xs)) + 1, int(max(ys)) + 1
 
 
-def build_layout():
-    def west(mesh, y):
-        d = mesh_depth(mesh)
-        BUILDINGS.append((mesh, WEST_FRONT - d / 2, y, 3))
-
-    def east(mesh, y):
-        d = mesh_depth(mesh)
-        BUILDINGS.append((mesh, EAST_FRONT + d / 2, y, 1))
-
-    west('saloon', 452); west('store', 388); west('house', 326)
-    west('hotel', 572); west('barber', 636); west('shack', 694)
-    east('bank', 452); east('sheriff', 388); east('house', 326)
-    east('store', 572); east('house', 636); east('shack', 694)
-    BUILDINGS.append(('church', 512, 140, 0))
-    BUILDINGS.append(('depot', 620, 808, 0))
-    BUILDINGS.append(('watertower', 700, 790, 0))
-    BUILDINGS.append(('shack', 372, 600, 0))
-    BUILDINGS.append(('house', 668, 300, 1))
+def mesh_width(name):
+    m = MESHES[MESH_ID[name]]
+    xs = [w[0] for w in m.walls if not (w[11] & 1)] + [w[2] for w in m.walls if not (w[11] & 1)]
+    return max(xs) - min(xs)
 
 
 def mesh_depth(name):
     m = MESHES[MESH_ID[name]]
-    zs = [w[1] for w in m.walls if not w[11]] + [w[3] for w in m.walls if not w[11]]
+    zs = [w[1] for w in m.walls if not (w[11] & 1) and abs(w[1]) <= 30] + [w[3] for w in m.walls if not (w[11] & 1) and abs(w[3]) <= 30]
     return max(zs) - min(zs)
+
+
+def build_layout():
+    rnd = random.Random(86)
+    hotels = ['palms', 'coral', 'breeze', 'tropic', 'neptune', 'dunes']
+    small = ['surf', 'cafe', 'regal', 'aqua', 'coral', 'tropic']
+
+    def row(x_front, facing_east, y0, y1, kinds):
+        """fill a block edge with buildings whose fronts sit on x_front"""
+        y = y0 + rnd.randint(2, 8)
+        while True:
+            name = rnd.choice(kinds)
+            w = mesh_width(name)
+            if y + w > y1 - 2:
+                break
+            d = mesh_depth(name)
+            cx = x_front - d / 2 if facing_east else x_front + d / 2
+            BUILDINGS.append((name, cx, y + w / 2, 3 if facing_east else 1))
+            y += w + rnd.randint(4, 14)
+
+    for bi, (bx0, bx1) in enumerate(BLOCKS_X):
+        for (by0, by1) in BLOCKS_Y:
+            X0, X1 = bx0 * 8, (bx1 + 1) * 8
+            Y0, Y1 = by0 * 8, (by1 + 1) * 8
+            if bi == 1 and by0 == 45:
+                BUILDINGS.append(('condo', X0 + 40, Y0 + 60, 1))
+                row(X1, True, Y0 + 110, Y1, small)
+                continue
+            if bi == 0 and by0 == 75:
+                BUILDINGS.append(('condo', X0 + 40, Y0 + 110, 3))
+                row(X0, False, Y0, Y0 + 80, small)
+                continue
+            row(X0, False, Y0, Y1, small if bi < 2 else hotels)
+            row(X1, True, Y0, Y1, hotels if bi == 2 else small)
+    # lifeguard huts on the sand, facing the sea
+    for y in (150, 360, 570, 770):
+        BUILDINGS.append(('lifeguard', 742, y, 3))
 
 
 def town_palette():

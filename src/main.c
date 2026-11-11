@@ -106,8 +106,8 @@ IWRAM_CODE static int matrix_for(u16 pa) {
         if (d <= tol && d >= -tol) return k;
     }
     if (nmat < 32) { mat_pa[nmat] = pa; return nmat++; }
-    int best = 1; s32 bd = 0x7FFFFFFF;
-    for (int k = 1; k < 32; k++) {
+    int best = 31; s32 bd = 0x7FFFFFFF;
+    for (int k = 24; k < 32; k++) {           /* far sprites: the smallest scales were handed out last */
         s32 d = (s32)mat_pa[k] - pa;
         if (d < 0) d = -d;
         if (d < bd) { bd = d; best = k; }
@@ -165,7 +165,6 @@ void game_present(void) {
     dma_copy32(OAM_MEM, oam_shadow, sizeof(oam_shadow));
     REG_BG0HOFS = (cam.yaw >> 6) & 511;
     if (player_frame_src) dma_copy32((u8 *)OBJ_VRAM + TILE_PLAYER * 32, player_frame_src, 2048);
-    if (horse_frame_src) dma_copy32((u8 *)OBJ_VRAM + TILE_HORSE * 32, horse_frame_src, 2048);
     for (int i = 0; i < MAX_NPC; i++)
         if (npc_frame_src[i]) dma_copy32((u8 *)OBJ_VRAM + (TILE_NPC + i * 32) * 32, npc_frame_src[i], npc_frame_bytes[i]);
     if (bslots_used) dma_copy32((u8 *)OBJ_VRAM + TILE_BSLOT * 32, bslot_stage, bslots_used * 32);
@@ -215,13 +214,13 @@ void game_tick(u16 keys, int steps) {
     if (steps < 1) steps = 1;
     if (steps > 3) steps = 3;
     if (title) {
-        /* attract mode: a slow dolly up the main street */
+        /* attract mode: a slow cruise up Ocean Drive, hotels on the left, palms on the right */
         orbit += steps;
         s32 along = (orbit * 40) % (560 << 8);
         cam.yaw = (u16)(isin(orbit * 90) >> 2);
         cam.sn = isin(cam.yaw); cam.cs = icos(cam.yaw);
-        cam.x = (512 << 8) + (isin(orbit * 60) << 2);
-        cam.y = (820 << 8) - along;
+        cam.x = (572 << 8) + (isin(orbit * 60) << 2);
+        cam.y = (800 << 8) - along;
         for (int s = 0; s < steps; s++) { game_frame++; actors_update(0, 0); }
         if (pressed & KEY_START) { title = 0; title_mode = 0; actors_init(); bld_invalidate(); }
     } else {
