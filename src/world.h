@@ -15,7 +15,6 @@ typedef struct { s32 x, y; u8 type, t; s16 h; } FxEnt;
 extern FxEnt fx[MAX_FX];
 
 extern u8 bslot_stage[];
-extern u8 bslot_dirty[];
 extern u16 bill_tile[];
 extern u16 bill_kinv[];
 extern int bslots_used;

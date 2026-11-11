@@ -74,7 +74,11 @@ void actors_init(void) {
     player.x = 512 << 8; player.y = 610 << 8; player.heading = 0;
     player.health = 5; player.ammo = 6; player.reload = 0; player.bounty = 0;
     player.shoot_timer = 0; player.hurt = 0;
-    for (int i = 0; i < MAX_NPC; i++) { npcs[i].slot = i; spawn_npc(&npcs[i], 1); }
+    for (int i = 0; i < MAX_NPC; i++) {
+        npcs[i].slot = i;
+        if (FREE_ROAM) { npcs[i].alive = 0; npcs[i].state = 0xFF; continue; }
+        spawn_npc(&npcs[i], 1);
+    }
     for (int i = 0; i < N_TUMBLE; i++) {
         tumbles[i].x = (rand32() % 1000) << 8; tumbles[i].y = (100 + rand32() % 820) << 8;
         tumbles[i].vx = 60 + (rand32() & 63); tumbles[i].phase = rand32();
@@ -157,7 +161,7 @@ static void update_player(u16 keys, u16 pressed) {
     if (player.reload) {
         if (--player.reload == 0) player.ammo = 6;
     }
-    if ((pressed & KEY_B) && !player.shoot_timer && !player.reload) {
+    if (!FREE_ROAM && (pressed & KEY_B) && !player.shoot_timer && !player.reload) {
         if (player.ammo > 0) {
             player.ammo--; player.shoot_timer = 16;
             shoot();
@@ -211,7 +215,7 @@ static void update_npc(Npc *n) {
 
 void actors_update(u16 keys, u16 pressed) {
     update_player(keys, pressed);
-    for (int i = 0; i < MAX_NPC; i++) update_npc(&npcs[i]);
+    if (!FREE_ROAM) for (int i = 0; i < MAX_NPC; i++) update_npc(&npcs[i]);
     for (int i = 0; i < N_TUMBLE; i++) {
         Tumble *t = &tumbles[i];
         t->x += t->vx; t->phase += 900;
@@ -243,7 +247,7 @@ void actors_draw(void) {
     for (int i = 0; i < MAX_NPC; i++) {
         Npc *n = &npcs[i];
         npc_frame_src[i] = 0;
-        if (!project(n->x, n->y, &p)) continue;
+        if (n->state == 0xFF || !project(n->x, n->y, &p)) continue;
         s32 s = p.scale >> 2;                       /* outlaw art: 4 px per unit */
         u16 tile = TILE_NPC + i * 32;
         if (n->state == NS_DEAD) {

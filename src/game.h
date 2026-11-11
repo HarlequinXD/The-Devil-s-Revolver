@@ -4,6 +4,10 @@
 #include "gba.h"
 #include "assets/assets.h"
 
+/* Free roam: no outlaws, no shooting - just explore the town and desert.
+   Set to 0 to bring back the bounty-hunting gameplay. */
+#define FREE_ROAM 1
+
 /* ---- projection (must match tools/common.py) ---- */
 #define HORIZON   GEN_HORIZON     /* first ground scanline */
 #define FOCAL     GEN_FOCAL       /* focal length in pixels */
@@ -39,8 +43,8 @@ INLINE u32 timer_cycles(void) {
 #define MAX_NPC         6
 #define TILE_BILLS      256    /* static billboard art */
 #define TILE_FX         528
-#define TILE_BSLOT      576    /* building canvases, 64 tiles each */
-#define MAX_BSLOTS      7
+#define TILE_BSLOT      576    /* building canvases (tile pool) */
+#define BLD_TILES       448
 
 /* ---- OBJ palette banks ---- */
 #define PAL_COWBOY 0
@@ -79,12 +83,13 @@ IWRAM_CODE void spr_add(s32 depth, u16 a0, u16 a1, u16 a2);
 typedef struct {
     s32 sx0, sy0;      /* screen origin of canvas */
     int scale;         /* 1 or 2 screen pixels per canvas pixel */
-    int nx, ny;        /* canvas size in 64x64 slots */
+    int nx, ny;        /* canvas size in OBJs (64x64 each when more than one) */
+    int ow, oh;        /* size of each OBJ in pixels */
     s32 ax, ay;        /* screen position of the anchor corner */
     int aidx;          /* anchor: wall whose start corner is farthest from the camera */
 } Canvas;
 
-IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots);  /* returns slots needed, 0 = not visible */
+IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_tiles);  /* returns tiles needed, 0 = not visible */
 IWRAM_CODE void bld_draw(u8 *staging);
 IWRAM_CODE int bld_anchor(int bi, int aidx, s32 *ax, s32 *ay);
 IWRAM_CODE void m7_build_iw(void *table);

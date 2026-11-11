@@ -94,3 +94,57 @@ col_fill:
 .Ldone:
     ldmfd   sp!, {r4-r9, lr}
     bx      lr
+
+@ void pack_row(u32 *out, const u8 *src, u32 ntiles)
+@ Packs an (8*ntiles)x8 strip of the 8bpp canvas (stride 128, values 0..15) into
+@ ntiles consecutive 4bpp 8x8 tiles (32 bytes each).
+    .global pack_row
+    .type pack_row, %function
+pack_row:
+    stmfd   sp!, {r4-r8, lr}
+    ldr     r8, =0x00FF00FF
+    mov     r7, r2                  @ tiles
+.Lptile:
+    mov     r6, #8                  @ rows
+    mov     r2, r1
+.Lprow:
+    ldmia   r2, {r3, r4}
+    orr     r3, r3, r3, lsr #4
+    and     r3, r3, r8
+    orr     r3, r3, r3, lsr #8
+    orr     r4, r4, r4, lsr #4
+    and     r4, r4, r8
+    orr     r4, r4, r4, lsr #8
+    mov     r3, r3, lsl #16
+    mov     r3, r3, lsr #16
+    orr     r3, r3, r4, lsl #16
+    str     r3, [r0], #4
+    add     r2, r2, #128
+    subs    r6, r6, #1
+    bne     .Lprow
+    add     r1, r1, #8
+    subs    r7, r7, #1
+    bne     .Lptile
+    ldmfd   sp!, {r4-r8, lr}
+    bx      lr
+    .ltorg
+
+@ void canvas_clear_row(u8 *dst, u32 bytes)  -- bytes is a multiple of 32
+    .global canvas_clear_row
+    .type canvas_clear_row, %function
+canvas_clear_row:
+    stmfd   sp!, {r4-r9}
+    mov     r2, #0
+    mov     r3, #0
+    mov     r4, #0
+    mov     r5, #0
+    mov     r6, #0
+    mov     r7, #0
+    mov     r8, #0
+    mov     r9, #0
+.Lclr:
+    stmia   r0!, {r2-r9}
+    subs    r1, r1, #32
+    bgt     .Lclr
+    ldmfd   sp!, {r4-r9}
+    bx      lr

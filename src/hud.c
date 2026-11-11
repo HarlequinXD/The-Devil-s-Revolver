@@ -26,6 +26,9 @@ void hud_text(int x, int y, const char *s, int gold) {
     hud_dirty = 1;
 }
 
+extern u32 perf_cycles;
+extern int show_perf;
+
 static void put_num(char *buf, u32 v, int digits) {
     for (int i = digits - 1; i >= 0; i--) { buf[i] = '0' + v % 10; v /= 10; }
     buf[digits] = 0;
@@ -35,8 +38,6 @@ void hud_init(void) {
     for (int y = 0; y < 20; y++) hud_clear_row(y);
 }
 
-extern u32 perf_cycles;
-extern int show_perf;
 
 void hud_update(int title) {
     static int last_title = -1;
@@ -48,8 +49,21 @@ void hud_update(int title) {
         hud_text(9, 7, "A FRONTIER TALE", 0);
         if ((game_frame >> 5) & 1) hud_text(10, 12, "PRESS START", 1);
         else hud_clear_row(12);
-        hud_text(1, 17, "D-PAD MOVE   A RUN   B SHOOT", 0);
-        hud_text(1, 18, "L/R STRAFE   SELECT RELOAD", 0);
+        if (FREE_ROAM) {
+            hud_text(5, 17, "D-PAD MOVE    A RUN", 0);
+            hud_text(5, 18, "L/R STRAFE    FREE ROAM", 0);
+        } else {
+            hud_text(1, 17, "D-PAD MOVE   A RUN   B SHOOT", 0);
+            hud_text(1, 18, "L/R STRAFE   SELECT RELOAD", 0);
+        }
+        return;
+    }
+    if (FREE_ROAM) {
+        if (show_perf) {
+            static int lp = -1;
+            int pc = (int)(perf_cycles / 2809);
+            if (pc != lp) { char b[8]; lp = pc; b[0]='C'; b[1]='P'; b[2]='U'; b[3]=' '; put_num(b + 4, pc > 999 ? 999 : pc, 3); b[7]=0; hud_text(1, 19, b, 0); }
+        } else hud_clear_row(19);
         return;
     }
     char buf[16];

@@ -131,8 +131,7 @@ static void present(void) {
     if (player_frame_src) dma_copy32((u8 *)OBJ_VRAM + TILE_PLAYER * 32, player_frame_src, 2048);
     for (int i = 0; i < MAX_NPC; i++)
         if (npc_frame_src[i]) dma_copy32((u8 *)OBJ_VRAM + (TILE_NPC + i * 32) * 32, npc_frame_src[i], npc_frame_bytes[i]);
-    for (int s = 0; s < MAX_BSLOTS; s++)
-        if (bslot_dirty[s]) { dma_copy32((u8 *)OBJ_VRAM + (TILE_BSLOT + s * 64) * 32, bslot_stage + s * 2048, 2048); bslot_dirty[s] = 0; }
+    if (bslots_used) dma_copy32((u8 *)OBJ_VRAM + TILE_BSLOT * 32, bslot_stage, bslots_used * 32);
     if (hud_dirty) { dma_copy32(SCREENBLOCK(26), hud_map, 32 * 20 * 2); hud_dirty = 0; }
 }
 
@@ -161,6 +160,7 @@ int main(void) {
     title_mode = 1;
     u16 prev_keys = 0;
     u32 last_vb = irq_vblank_count;
+    u32 last_present = irq_vblank_count;
     u32 orbit = 0;
     render_frame();
     vblank_wait();
@@ -203,7 +203,9 @@ int main(void) {
         render_count++;
         hud_update(title);
         perf_cycles = cycles() - t0;
-        vblank_wait();
+        /* locked 30 fps: buildings are fully re-rendered in 3D every frame */
+        do { vblank_wait(); } while ((irq_vblank_count - last_present) < 2);
+        last_present = irq_vblank_count;
         present();
     }
 }

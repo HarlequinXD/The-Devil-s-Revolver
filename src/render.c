@@ -13,7 +13,7 @@
 #include "game.h"
 
 #define CSTRIDE 128
-#define CROWS 96
+#define CROWS 80
 static u8 canvas[CSTRIDE * CROWS] ALIGN4;
 static u8 shade_iw[48] ALIGN4;      /* shading LUT copied to IWRAM */
 static const u8 *tex_pix[N_TOWN_TEX];
@@ -24,6 +24,8 @@ typedef long long s64;
 
 /* ARM assembly inner loop (fill.s): textured, transparent, shaded column */
 void col_fill(u8 *dst, const u8 *col, u32 vv, u32 vstp, u32 n, const u8 *shade, u32 sh, u32 mask);
+void pack_row(u32 *out, const u8 *src, u32 ntiles);  /* ntiles 8x8 tiles -> 4bpp */
+void canvas_clear_row(u8 *dst, u32 bytes);          /* bytes multiple of 32 */
 
 INLINE s32 mul64sh(s32 a, s32 b, int sh) { return (s32)(((s64)a * b) >> sh); }
 
@@ -57,30 +59,31 @@ typedef struct {
     u8 shade;
 } PolyJob;
 
-static WallJob wjobs[40] EWRAM_BSS;
+static WallJob wjobs[40];
 static PolyJob pjobs[24] EWRAM_BSS;
 
 static int cv_sx0, cv_sy0, cv_s, cv_w, cv_h;
-static int prep_nw, prep_np, prep_s, prep_nx, prep_ny;
+static int prep_nw, prep_np, prep_s, prep_nx, prep_ny, prep_ow, prep_oh;
 static s32 prep_bx0, prep_by0;
 
 /* ------------------------------------------------------------- wall columns */
-static void draw_wall(const WallJob *j) {
+__attribute__((section(".iwram"))) static void draw_wall(const WallJob *j) {
     const MWall *w = j->w;
     s32 sxa16 = j->sxa16, sxb16 = j->sxb16;
     s32 span = sxb16 - sxa16;
     if (span <= 0) return;
-    s32 iza = j->iza, izb = j->izb;                           /* 2^20 / Z */
-    s32 uza = j->ua * iza, uzb = j->ub * izb;
-    s32 diz16 = ((izb - iza) << 8) / span;                    /* iz<<8 per 1/16 px */
-    s32 duz16 = (uzb - uza) / span;
     int s = cv_s, sh = 4 + (s - 1);
     s32 base16 = cv_sx0 * 16 + 8 * s;                         /* centre of column 0 */
     s32 c0 = (sxa16 - base16 + (16 * s - 1)) >> sh;
     if (c0 < 0) c0 = 0;
     s32 c1 = (sxb16 - base16 + (16 * s - 1)) >> sh;           /* exclusive */
     if (c1 > cv_w) c1 = cv_w;
-    if (c0 >= c1) return;
+    if (c0 >= c1) return;                                     /* nothing on this canvas */
+    s32 iza = j->iza, izb = j->izb;                           /* 2^20 / Z */
+    s32 uza = j->ua * iza, uzb = j->ub * izb;
+    s32 rspan = recip28(span);                                /* no divisions per wall */
+    s32 diz16 = mul64sh((izb - iza) << 8, rspan, 28);         /* iz<<8 per 1/16 px */
+    s32 duz16 = mul64sh(uzb - uza, rspan, 28);
     s32 f0 = base16 + (c0 << sh) - sxa16;
     s32 iz8 = (iza << 8) + diz16 * f0;
     s32 uz = uza + duz16 * f0;
@@ -91,36 +94,53 @@ static void draw_wall(const WallJob *j) {
     const u8 *shade = shade_iw + j->shade * 16;
     s32 hy1 = (CAM_H - w->y1) * FOCAL, hy0 = (CAM_H - w->y0) * FOCAL;
     /* texels per screen pixel = Kw * Z (no per-column division) */
-    s32 Kw = ((w->v1 - w->v0) << 16) / ((w->y1 - w->y0) * FOCAL);
+    s32 Kw = mul64sh((w->v1 - w->v0) << 16, recip28((w->y1 - w->y0) * FOCAL), 28);
     s32 rowbase16 = cv_sy0 * 16 + 8 * s;
-    for (s32 c = c0; c < c1; c++, iz8 += dizc, uz += duzc) {
-        s32 iz = iz8 >> 8;
-        if (iz <= 0) continue;
-        s32 Zq8 = recip28(iz);                                 /* Z * 256 */
-        s32 u = mul64sh(uz, Zq8, 28);                          /* Q4 texel */
-        s32 top16 = HORIZON * 16 + mul64sh(hy1, iz, 16);
-        s32 bot16 = HORIZON * 16 + mul64sh(hy0, iz, 16);
+    /* wall top/bottom are linear in 1/Z, hence in screen x: step them exactly.
+       u and the texel step need Z: computed every 8 columns, lerped between. */
+    s32 top_fx = (s32)(((s64)hy1 * iz8) >> 16), dtop = (s32)(((s64)hy1 * dizc) >> 16);
+    s32 bot_fx = (s32)(((s64)hy0 * iz8) >> 16), dbot = (s32)(((s64)hy0 * dizc) >> 16);
+    u32 vshift = 12 - td->hshift, fsh = 32 - td->hshift - ws, fmask = hm << ws;
+    const u8 *fshade = j->shade ? shade : 0;
+    s32 u = 0, du = 0, vst = 0, dvst = 0;
+    int left = 0;
+    for (s32 c = c0; c < c1; c++, iz8 += dizc, uz += duzc, top_fx += dtop, bot_fx += dbot) {
+        if (!left) {                                           /* new block of up to 8 columns */
+            int len = c1 - c; if (len > 8) len = 8;
+            s32 izA = iz8 >> 8, izB = (iz8 + dizc * len) >> 8;
+            if (izA <= 0) izA = 1;
+            if (izB <= 0) izB = 1;
+            s32 ZA = recip28(izA), ZB = recip28(izB);            /* Z * 256 */
+            s32 uA = mul64sh(uz, ZA, 28), uB = mul64sh(uz + duzc * len, ZB, 28);
+            s32 vA = mul64sh(Kw, ZA, 8), vB = mul64sh(Kw, ZB, 8);
+            s32 rl = (s32)lut_recip[len];                      /* 2^24 / len */
+            u = uA << 8; du = mul64sh((uB - uA) << 8, rl, 24);
+            vst = vA; dvst = mul64sh(vB - vA, rl, 24);
+            left = len;
+        }
+        left--;
+        s32 top16 = HORIZON * 16 + (top_fx >> 8);
+        s32 bot16 = HORIZON * 16 + (bot_fx >> 8);
+        s32 uc = u >> 8, vstep = vst;
+        u += du; vst += dvst;
         if (bot16 <= top16) continue;
-        s32 vstep = mul64sh(Kw, Zq8, 8);                        /* Q20 texel per screen px */
         s32 r0 = (top16 - rowbase16 + (16 * s - 1)) >> sh;
         if (r0 < 0) r0 = 0;
         s32 r1 = (bot16 - rowbase16 + (16 * s - 1)) >> sh;
         if (r1 > cv_h) r1 = cv_h;
         if (r0 >= r1) continue;
         s32 v = (w->v0 << 16) + mul64sh(vstep, rowbase16 + (r0 << sh) - top16, 4);
-        s32 vs = vstep << (s - 1 + 4);
-        const u8 *col = pix + ((u >> 4) & wm);
+        const u8 *col = pix + ((uc >> 4) & wm);
         u8 *dst = canvas + r0 * CSTRIDE + c;
-        /* v is Q20 texel (Q4 texel + 16 frac) */
-        u32 vv = (u32)v << (12 - td->hshift), vstp = (u32)(vs >> 4) << (12 - td->hshift);
-        col_fill(dst, col, vv, vstp, r1 - r0, j->shade ? shade : 0, 32 - td->hshift - ws, hm << ws);
+        u32 vv = (u32)v << vshift, vstp = (u32)(vstep << (s - 1)) << vshift;
+        col_fill(dst, col, vv, vstp, r1 - r0, fshade, fsh, fmask);
     }
 }
 
 /* ------------------------------------------------------------- affine triangles */
 typedef struct { s32 x, u, v, dx, du, dv; s32 y0, y1; } Edge;
 
-static int edge_init(Edge *e, const PolyJob *p, int a, int b) {
+__attribute__((section(".iwram"))) static int edge_init(Edge *e, const PolyJob *p, int a, int b) {
     s32 ay = p->y[a], by = p->y[b];
     s32 dy = by - ay;
     if (dy <= 0) return 0;
@@ -139,7 +159,7 @@ static int edge_init(Edge *e, const PolyJob *p, int a, int b) {
     return 1;
 }
 
-static void span(s32 row, const Edge *l, const Edge *r, const u8 *pix, int ws, int wm, int hm, const u8 *shade) {
+static inline __attribute__((always_inline)) void span(s32 row, const Edge *l, const Edge *r, const u8 *pix, int ws, int wm, int hm, const u8 *shade) {
     if (row < 0 || row >= cv_h) return;
     s32 xl = l->x, xr = r->x;
     if (xr <= xl) return;
@@ -165,12 +185,20 @@ static void span(s32 row, const Edge *l, const Edge *r, const u8 *pix, int ws, i
     }
 }
 
-static void draw_tri(const PolyJob *p, int i0, int i1, int i2) {
+__attribute__((section(".iwram"))) static void draw_tri(const PolyJob *p, int i0, int i1, int i2) {
     int idx[3] = {i0, i1, i2};
     /* sort by y */
     if (p->y[idx[0]] > p->y[idx[1]]) { int t = idx[0]; idx[0] = idx[1]; idx[1] = t; }
     if (p->y[idx[1]] > p->y[idx[2]]) { int t = idx[1]; idx[1] = idx[2]; idx[2] = t; }
     if (p->y[idx[0]] > p->y[idx[1]]) { int t = idx[0]; idx[0] = idx[1]; idx[1] = t; }
+    {   /* whole triangle off the canvas? */
+        s32 mnx = p->x[i0], mxx = mnx;
+        if (p->x[i1] < mnx) mnx = p->x[i1];
+        if (p->x[i1] > mxx) mxx = p->x[i1];
+        if (p->x[i2] < mnx) mnx = p->x[i2];
+        if (p->x[i2] > mxx) mxx = p->x[i2];
+        if (mxx < 0 || mnx >= cv_w * 16 || p->y[idx[2]] < 0 || p->y[idx[0]] >= cv_h * 16) return;
+    }
     Edge lng, s1, s2;
     if (!edge_init(&lng, p, idx[0], idx[2])) return;
     int h1 = edge_init(&s1, p, idx[0], idx[1]);
@@ -212,12 +240,12 @@ static void draw_tri(const PolyJob *p, int i0, int i1, int i2) {
 }
 
 /* ------------------------------------------------------------- building */
-static int shade_for(s32 nx, s32 ny) {           /* world normal (any scale) */
+__attribute__((section(".iwram"))) static int shade_for(s32 nx, s32 ny) {           /* world normal (any scale) */
     s32 len = (nx < 0 ? -nx : nx) + (ny < 0 ? -ny : ny);
     if (!len) return 1;
-    s32 d = (nx * SUN_X + ny * SUN_Y) / len;      /* ~ Q12 cos */
-    if (d > 1200) return 0;
-    if (d > -1400) return 1;
+    s32 d = nx * SUN_X + ny * SUN_Y;              /* ~ Q12 cos * len */
+    if (d > 1200 * len) return 0;
+    if (d > -1400 * len) return 1;
     return 2;
 }
 
@@ -269,13 +297,15 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
 
     s32 bx0 = 9999, by0 = 9999, bx1 = -9999, by1 = -9999;
     int nw = 0, np = 0;
-    s32 farz = -0x7FFFFFFF; int fari = 0;
+
+    int far = Zo > (230 << 8);                 /* LOD: drop posts and porch roofs far away */
     for (int i = 0; i < m->nwalls; i++) {
         const MWall *w = &m->walls[i];
+        if (far && (w->flags & WALL_DOUBLE)) continue;
         s32 Xa = TX(w->x0, w->z0), Za = TZ(w->x0, w->z0);
         s32 Xb = TX(w->x1, w->z1), Zb = TZ(w->x1, w->z1);
         s32 ua = w->u0, ub = w->u1;
-        if (Za > farz) { farz = Za; fari = i; }
+
         s64 cr = (s64)Xa * Zb - (s64)Xb * Za;
         int shade;
         s32 lnx = -(w->z1 - w->z0), lnz = (w->x1 - w->x0);
@@ -317,6 +347,7 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
     }
     for (int i = 0; i < m->npolys; i++) {
         const MPoly *p = &m->polys[i];
+        if (far && (p->flags & WALL_DOUBLE)) continue;
         PolyJob *j = &pjobs[np];
         int ok = 1;
         s32 zs = 0;
@@ -354,8 +385,6 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
         if (++np >= 24) break;
     }
     if (!nw && !np) return 0;
-    cv->aidx = fari;
-    if (!bld_anchor(bi, fari, &cv->ax, &cv->ay)) return 0;
     bx0 -= 1; by0 -= 1; bx1 += 2; by1 += 2;
     if (bx0 < 0) bx0 = 0;
     if (by0 < 0) by0 = 0;
@@ -363,6 +392,7 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
     if (by1 > SCREEN_H) by1 = SCREEN_H;
     s32 w = bx1 - bx0, h = by1 - by0;
     if (w <= 0 || h <= 0) return 0;
+    if (h < 5 && w < 12) return 0;                  /* a speck on the horizon */
     if (!shade_ready) {
         for (int i = 0; i < 48; i++) shade_iw[i] = town_shade[i];
         u32 off = 0;                  /* copy textures to EWRAM: faster random byte reads than ROM */
@@ -377,33 +407,40 @@ IWRAM_CODE int bld_prepare(int bi, Canvas *cv, int max_slots) {
         shade_ready = 1;
     }
     int s = (w <= 30 && h <= 36) ? 1 : 2;
-    int nx = (w + 64 * s - 1) / (64 * s), ny = (h + 64 * s - 1) / (64 * s);
-    if (nx * ny > max_slots) return 0;
+    int cw = (w + s - 1) / s, ch = (h + s - 1) / s;           /* canvas pixels needed */
+    int nx, ny, ow = 64, oh = 64;
+    if (cw <= 64 && ch <= 64) {
+        /* one sprite, smallest OBJ shape that fits: 16x16 .. 64x64 */
+        static const u8 shapes[7][2] = {{16,16},{32,16},{16,32},{32,32},{64,32},{32,64},{64,64}};
+        for (int k = 0; k < 7; k++)
+            if (shapes[k][0] >= cw && shapes[k][1] >= ch) { ow = shapes[k][0]; oh = shapes[k][1]; break; }
+        nx = ny = 1;
+    } else {
+        nx = (cw + 63) / 64; ny = (ch + 63) / 64;
+    }
+    int tiles = nx * ny * (ow / 8) * (oh / 8);
+    if (tiles > max_slots) return 0;
     prep_nw = nw; prep_np = np; prep_bx0 = bx0; prep_by0 = by0; prep_s = s; prep_nx = nx; prep_ny = ny;
-    cv->sx0 = bx0; cv->sy0 = by0; cv->scale = s; cv->nx = nx; cv->ny = ny;
-    return nx * ny;
+    prep_ow = ow; prep_oh = oh;
+    cv->sx0 = bx0; cv->sy0 = by0; cv->scale = s; cv->nx = nx; cv->ny = ny; cv->ow = ow; cv->oh = oh;
+    return tiles;
 }
 
 /* draw the building prepared by bld_prepare into 4bpp tiles at `staging` */
 IWRAM_CODE void bld_draw(u8 *staging) {
     int nw = prep_nw, np = prep_np, s = prep_s, nx = prep_nx, ny = prep_ny;
     s32 bx0 = prep_bx0, by0 = prep_by0;
-    cv_s = s; cv_sx0 = bx0; cv_sy0 = by0; cv_w = nx * 64; cv_h = ny * 64;
+    int ow = prep_ow, oh = prep_oh;
+    cv_s = s; cv_sx0 = bx0; cv_sy0 = by0; cv_w = nx * ow; cv_h = ny * oh;
     if (cv_h > CROWS) cv_h = CROWS;           /* rows past the screen are never drawn */
     /* clear canvas */
-    {
-        u32 *p = (u32 *)canvas;
-        for (int r = 0; r < cv_h; r++) {
-            u32 *q = p + r * (CSTRIDE / 4);
-            for (int c = 0; c < cv_w / 4; c += 4) { q[c] = 0; q[c + 1] = 0; q[c + 2] = 0; q[c + 3] = 0; }
-        }
-    }
+    for (int r = 0; r < cv_h; r++) canvas_clear_row(canvas + r * CSTRIDE, cv_w);
     /* polys to canvas coords (Q4) */
     for (int i = 0; i < np; i++) {
         PolyJob *j = &pjobs[i];
         for (int k = 0; k < j->p->n; k++) {
-            j->x[k] = (j->x[k] - bx0 * 16) / s;
-            j->y[k] = (j->y[k] - by0 * 16) / s;
+            j->x[k] = (j->x[k] - bx0 * 16) >> (s - 1);
+            j->y[k] = (j->y[k] - by0 * 16) >> (s - 1);
         }
     }
     /* painter's order, far to near */
@@ -425,23 +462,17 @@ IWRAM_CODE void bld_draw(u8 *staging) {
             if (j->p->n == 4) draw_tri(j, 0, 2, 3);
         }
     }
-    /* pack 8bpp canvas -> 4bpp 64x64 OBJ tiles */
+    /* pack 8bpp canvas -> 4bpp OBJ tiles (ARM asm, one row of 8x8 tiles per call) */
     u32 *out = (u32 *)staging;
+    int tw = ow / 8;
     for (int sy = 0; sy < ny; sy++)
         for (int sx = 0; sx < nx; sx++)
-            for (int ty = 0; ty < 8; ty++)
-                for (int tx = 0; tx < 8; tx++) {
-                    int row0 = sy * 64 + ty * 8;
-                    if (row0 >= cv_h) { for (int r = 0; r < 8; r++) *out++ = 0; continue; }
-                    const u32 *src = (const u32 *)(canvas + row0 * CSTRIDE + sx * 64 + tx * 8);
-                    for (int r = 0; r < 8; r++) {
-                        u32 a = src[0], c = src[1];
-                        a = (a | (a >> 4)) & 0x00FF00FF; a = (a | (a >> 8)) & 0x0000FFFF;
-                        c = (c | (c >> 4)) & 0x00FF00FF; c = (c | (c >> 8)) & 0x0000FFFF;
-                        *out++ = a | (c << 16);
-                        src += CSTRIDE / 4;
-                    }
-                }
+            for (int ty = 0; ty < oh / 8; ty++) {
+                int row0 = sy * oh + ty * 8;
+                if (row0 >= cv_h) { for (int k = 0; k < tw * 8; k++) *out++ = 0; continue; }
+                pack_row(out, canvas + row0 * CSTRIDE + sx * ow, tw);
+                out += tw * 8;
+            }
 }
 
 /* ------------------------------------------------------------- Mode 7 table */
