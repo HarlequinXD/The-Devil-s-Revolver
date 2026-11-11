@@ -34,10 +34,20 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang lld llvm
+          # use the LLVM the runner image already has; only fall back to apt (with retries)
+          for v in 18 17 16 ""; do
+            s=${v:+-$v}
+            if command -v clang$s && command -v ld.lld$s && command -v llvm-objcopy$s; then
+              echo "TC=CC=clang$s LD=ld.lld$s OBJCOPY=llvm-objcopy$s" >> "$GITHUB_ENV"; exit 0
+            fi
+          done
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && sudo apt-get install -y clang lld llvm && { echo "TC=" >> "$GITHUB_ENV"; exit 0; }
+            sleep 30
+          done
+          exit 1
       - name: Build ROM
-        run: make
+        run: make $TC
       - name: Fix header for real hardware (devkitPro gbafix)
         run: |
           docker run --rm -v "$PWD:/w" -w /w devkitpro/devkitarm \
